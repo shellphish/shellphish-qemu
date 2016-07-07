@@ -8,8 +8,10 @@ from setuptools import setup
 from distutils.command.build import build as _build
 from setuptools.command.develop import develop as _develop
 
-QEMU_REPO_PATH_CGC = "shellphish-qemu-cgc"
-QEMU_PATH_CGC = os.path.join("bin", "shellphish-qemu-cgc")
+QEMU_REPO_PATH_CGC_TRACER = "shellphish-qemu-cgc-tracer"
+QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
+QEMU_PATH_CGC_TRACER = os.path.join("bin", "shellphish-qemu-cgc-tracer")
+QEMU_PATH_CGC_BASE = os.path.join("bin", "shellphish-qemu-cgc-base")
 
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_PATH_LINUX_I386 = os.path.join("bin", "shellphish-qemu-linux-i386")
@@ -23,7 +25,8 @@ QEMU_PATH_LINUX_ARM = os.path.join("bin", "shellphish-qemu-linux-arm")
 QEMU_PATH_LINUX_AARCH64 = os.path.join("bin", "shellphish-qemu-linux-aarch64")
 QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
 
-ALL_QEMU_BINS = [ QEMU_PATH_CGC,
+ALL_QEMU_BINS = [ QEMU_PATH_CGC_TRACER,
+    QEMU_PATH_CGC_BASE,
     QEMU_PATH_LINUX_I386,
     QEMU_PATH_LINUX_X86_64,
     QEMU_PATH_LINUX_MIPS,
@@ -39,13 +42,23 @@ BIN_PATH = "bin"
 
 def _clone_cgc_qemu():
     # grab the CGC repo
-    if not os.path.exists(QEMU_REPO_PATH_CGC):
+    if not os.path.exists(QEMU_REPO_PATH_CGC_TRACER) \
+            or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
         TRACER_QEMU_REPO_CGC = "git@git.seclab.cs.ucsb.edu:cgc/qemu.git"
         # since we're cloning from gitlab we'll need to try a couple times, since gitlab
         # has a cap on the number of ssh workers
         retrieved = False
+
         for _ in range(10):
-            if subprocess.call(['git', 'clone', '--branch', 'base_tracer', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC]) == 0:
+            if subprocess.call(['git', 'clone', '--branch', 'base_tracer', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_TRACER]) == 0:
+                retrieved = True
+                break
+            else:
+                time.sleep(random.randint(0, 10))
+
+
+        for _ in range(10):
+            if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) == 0:
                 retrieved = True
                 break
             else:
@@ -55,8 +68,11 @@ def _clone_cgc_qemu():
             raise LibError("Unable to retrieve tracer qemu")
 
     # update tracer qemu for cgc
-    if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC) != 0:
-        raise LibError("Unable to retrieve tracer qemu")
+    if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to retrieve cgc base qemu")
+
+    if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_TRACER) != 0:
+        raise LibError("Unable to retrieve cgc tracer qemu")
 
 def _clone_linux_qemu():
     # grab the linux tarball
@@ -76,23 +92,33 @@ def _build_qemus():
         except OSError:
             raise LibError("Unable to create bin directory")
 
-    print "Configuring CGC qemu..."
-    if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_CGC) != 0:
-        raise LibError("Unable to configure shellphish-qemu-cgc")
+    print "Configuring CGC base qemu..."
+    if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to configure shellphish-qemu-cgc-base")
+
+    print "Configuring CGC tracer qemu..."
+    if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_CGC_TRACER) != 0:
+        raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
 
     print "Configuring Linux qemu..."
     if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
 
-    print "Building CGC qemu..."
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC) != 0:
+    print "Building CGC base qemu..."
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to build shellphish-qemu-cgc")
+
+    print "Building CGC tracer qemu..."
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_TRACER) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc")
 
     print "Building Linux qemu..."
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_TRACER, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_TRACER)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
+
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
 
@@ -106,7 +132,8 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
-    os.chmod(QEMU_PATH_CGC, 0755)
+    os.chmod(QEMU_PATH_CGC_BASE, 0755)
+    os.chmod(QEMU_PATH_CGC_TRACER, 0755)
     os.chmod(QEMU_PATH_LINUX_I386, 0755)
     os.chmod(QEMU_PATH_LINUX_X86_64, 0755)
     os.chmod(QEMU_PATH_LINUX_MIPSEL, 0755)
