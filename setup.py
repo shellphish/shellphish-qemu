@@ -80,6 +80,10 @@ def _build_qemus():
         except OSError:
             raise LibError("Unable to create bin directory")
 
+    print "Resetting qemu repo..."
+    if subprocess.call(['git', 'clean', '-ffxxd'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
+
     print "Configuring CGC tracer qemu..."
     if subprocess.call(['./cgc_configure_tracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
@@ -90,8 +94,8 @@ def _build_qemus():
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_TRACER)
 
-    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
-        raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
+    if subprocess.call(['git', 'clean', '-ffxxd'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
 
     print "Configuring CGC base qemu..."
     if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
