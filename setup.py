@@ -11,6 +11,7 @@ from setuptools.command.develop import develop as _develop
 QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_PATH_CGC_TRACER = os.path.join("bin", "shellphish-qemu-cgc-tracer")
 QEMU_PATH_CGC_BASE = os.path.join("bin", "shellphish-qemu-cgc-base")
+QEMU_PATH_CGC_BASE = os.path.join("bin", "shellphish-qemu-cgc-tracer")
 
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_PATH_LINUX_I386 = os.path.join("bin", "shellphish-qemu-linux-i386")
@@ -26,6 +27,7 @@ QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
 
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
+    QEMU_PATH_CGC_TRACER,
     QEMU_PATH_LINUX_I386,
     QEMU_PATH_LINUX_X86_64,
     QEMU_PATH_LINUX_MIPS,
