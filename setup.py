@@ -103,6 +103,9 @@ def _build_qemus():
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
+    print "Configuring Linux qemu..."
+    if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+        raise LibError("Unable to configure shellphish-qemu-linux")
     print "Building Linux qemu..."
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
