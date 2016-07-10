@@ -4,4 +4,5 @@ rm -rf shellphish-qemu-cgc-base/
 rm -rf shellphish-qemu-cgc-tracer/
 
 pip install -e .
+python setup.py bdist_wheel
 
