@@ -140,6 +140,19 @@ def _build_qemus():
     os.chmod(QEMU_PATH_LINUX_ARM, 0755)
     os.chmod(QEMU_PATH_LINUX_AARCH64, 0755)
 
+    try:
+        cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
+        cgc_tracer_ver = subprocess.check_output([QEMU_PATH_CGC_TRACER, '-version'])
+        assert 'AFL' not in cgc_base_ver
+        assert 'AFL' not in cgc_tracer_ver
+        assert 'TRACER' not in cgc_base_ver
+        assert 'TRACER' in cgc_tracer_ver
+    except subprocess.CalledProcessError as e:
+        raise LibError("Unable to check CGC qemu base or tracer -version [ {} returned {}, output '{}' ]".format(e.cmd, e.returncode, e.output))
+    except AssertionError:
+        raise LibError("Wrong configuration for the base or tracer CGC qemus! Make sure to clean, and check with -version")
+
+
     # remove the source directory after building
     #shutil.rmtree(QEMU_REPO_PATH_LINUX)
     #shutil.rmtree(QEMU_REPO_PATH_CGC)
@@ -159,7 +172,7 @@ class develop(_develop):
             _develop.run(self)
 
 setup(
-    name='shellphish-qemu', version='0.7', description="A pip-installable set of qemus.",
+    name='shellphish-qemu', version='0.8', description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     data_files=[ ('bin', ALL_QEMU_BINS) ],
     cmdclass={'build': build, 'develop': develop}
