@@ -172,7 +172,7 @@ class develop(_develop):
             _develop.run(self)
 
 setup(
-    name='shellphish-qemu', version='0.9.2', description="A pip-installable set of qemus.",
+    name='shellphish-qemu', version='0.9.3', description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     data_files=[ ('bin', ALL_QEMU_BINS) ],
     cmdclass={'build': build, 'develop': develop}
