@@ -10,6 +10,7 @@ from setuptools.command.develop import develop as _develop
 
 QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_PATH_CGC_TRACER = os.path.join("bin", "shellphish-qemu-cgc-tracer")
+QEMU_PATH_CGC_NXTRACER = os.path.join("bin", "shellphish-qemu-cgc-nxtracer")
 QEMU_PATH_CGC_BASE = os.path.join("bin", "shellphish-qemu-cgc-base")
 
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
@@ -27,6 +28,7 @@ QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
     QEMU_PATH_CGC_TRACER,
+    QEMU_PATH_CGC_NXTRACER,
     QEMU_PATH_LINUX_I386,
     QEMU_PATH_LINUX_X86_64,
     QEMU_PATH_LINUX_MIPS,
@@ -95,7 +97,20 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_TRACER)
 
     if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
-        raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
+        raise LibError("Unable to clean shellphish-qemu-cgc")
+
+    print "Configuring CGC nxtracer qemu..."
+    if subprocess.call(['./cgc_configure_nxtracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to configure shellphish-qemu-cgc-nxtracer")
+
+    print "Building CGC nxtracer qemu..."
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to build shellphish-qemu-cgc-nxtracer")
+
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_NXTRACER)
+
+    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+        raise LibError("Unable to clean shellphish-qemu-cgc")
 
     print "Configuring CGC base qemu..."
     if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
@@ -130,6 +145,7 @@ def _build_qemus():
 
     os.chmod(QEMU_PATH_CGC_BASE, 0755)
     os.chmod(QEMU_PATH_CGC_TRACER, 0755)
+    os.chmod(QEMU_PATH_CGC_NXTRACER, 0755)
     os.chmod(QEMU_PATH_LINUX_I386, 0755)
     os.chmod(QEMU_PATH_LINUX_X86_64, 0755)
     os.chmod(QEMU_PATH_LINUX_MIPSEL, 0755)
@@ -143,14 +159,20 @@ def _build_qemus():
     try:
         cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
         cgc_tracer_ver = subprocess.check_output([QEMU_PATH_CGC_TRACER, '-version'])
+        cgc_nxtracer_ver = subprocess.check_output([QEMU_PATH_CGC_NXTRACER, '-version'])
         assert 'AFL' not in cgc_base_ver
         assert 'AFL' not in cgc_tracer_ver
+        assert 'AFL' not in cgc_nxtracer_ver
         assert 'TRACER' not in cgc_base_ver
         assert 'TRACER' in cgc_tracer_ver
+        assert 'TRACER' in cgc_nxtracer_ver
+        assert 'enforce NX' not in cgc_base_ver    # Playing it safe
+        assert 'enforce NX' not in cgc_tracer_ver  # Playing it safe
+        assert 'enforce NX' in cgc_nxtracer_ver    # Mainly used by Antonio for CI tests
     except subprocess.CalledProcessError as e:
-        raise LibError("Unable to check CGC qemu base or tracer -version [ {} returned {}, output '{}' ]".format(e.cmd, e.returncode, e.output))
+        raise LibError("Unable to check CGC qemu -version [ {} returned {}, output '{}' ]".format(e.cmd, e.returncode, e.output))
     except AssertionError:
-        raise LibError("Wrong configuration for the base or tracer CGC qemus! Make sure to clean, and check with -version")
+        raise LibError("Wrong configuration for the CGC qemus! Make sure to clean, and check with -version")
 
 
     # remove the source directory after building
@@ -172,7 +194,7 @@ class develop(_develop):
             _develop.run(self)
 
 setup(
-    name='shellphish-qemu', version='0.9.4', description="A pip-installable set of qemus.",
+    name='shellphish-qemu', version='0.9.5', description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     data_files=[ ('bin', ALL_QEMU_BINS) ],
     cmdclass={'build': build, 'develop': develop}
