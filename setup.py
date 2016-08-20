@@ -46,7 +46,7 @@ def _clone_cgc_qemu():
     # grab the CGC repo
     if not os.path.exists(QEMU_REPO_PATH_CGC_BASE) \
             or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
-        TRACER_QEMU_REPO_CGC = "git@git.seclab.cs.ucsb.edu:cgc/qemu.git"
+        TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
         # since we're cloning from gitlab we'll need to try a couple times, since gitlab
         # has a cap on the number of ssh workers
         retrieved = False
