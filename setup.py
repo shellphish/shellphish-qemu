@@ -1,29 +1,36 @@
 import os
+import sys
 import time
 import shutil
 import random
 import subprocess
+import platform
+
 from distutils.errors import LibError
-from setuptools import setup
+from distutils.util import get_platform
 from distutils.command.build import build as _build
+from setuptools import setup
 from setuptools.command.develop import develop as _develop
 
-QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
-QEMU_PATH_CGC_TRACER = os.path.join("bin", "shellphish-qemu-cgc-tracer")
-QEMU_PATH_CGC_NXTRACER = os.path.join("bin", "shellphish-qemu-cgc-nxtracer")
-QEMU_PATH_CGC_BASE = os.path.join("bin", "shellphish-qemu-cgc-base")
+BIN_PATH = os.path.join("shellphish_qemu", "bin")
 
+QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
-QEMU_PATH_LINUX_I386 = os.path.join("bin", "shellphish-qemu-linux-i386")
-QEMU_PATH_LINUX_X86_64 = os.path.join("bin", "shellphish-qemu-linux-x86_64")
-QEMU_PATH_LINUX_MIPS = os.path.join("bin", "shellphish-qemu-linux-mips")
-QEMU_PATH_LINUX_MIPSEL = os.path.join("bin", "shellphish-qemu-linux-mipsel")
-QEMU_PATH_LINUX_MIPS64 = os.path.join("bin", "shellphish-qemu-linux-mips64")
-QEMU_PATH_LINUX_PPC = os.path.join("bin", "shellphish-qemu-linux-ppc")
-QEMU_PATH_LINUX_PPC64 = os.path.join("bin", "shellphish-qemu-linux-ppc64")
-QEMU_PATH_LINUX_ARM = os.path.join("bin", "shellphish-qemu-linux-arm")
-QEMU_PATH_LINUX_AARCH64 = os.path.join("bin", "shellphish-qemu-linux-aarch64")
 QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
+
+QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
+QEMU_PATH_CGC_NXTRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-nxtracer")
+QEMU_PATH_CGC_BASE = os.path.join(BIN_PATH, "shellphish-qemu-cgc-base")
+
+QEMU_PATH_LINUX_I386 = os.path.join(BIN_PATH, "shellphish-qemu-linux-i386")
+QEMU_PATH_LINUX_X86_64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-x86_64")
+QEMU_PATH_LINUX_MIPS = os.path.join(BIN_PATH, "shellphish-qemu-linux-mips")
+QEMU_PATH_LINUX_MIPSEL = os.path.join(BIN_PATH, "shellphish-qemu-linux-mipsel")
+QEMU_PATH_LINUX_MIPS64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-mips64")
+QEMU_PATH_LINUX_PPC = os.path.join(BIN_PATH, "shellphish-qemu-linux-ppc")
+QEMU_PATH_LINUX_PPC64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-ppc64")
+QEMU_PATH_LINUX_ARM = os.path.join(BIN_PATH, "shellphish-qemu-linux-arm")
+QEMU_PATH_LINUX_AARCH64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-aarch64")
 
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
@@ -39,8 +46,6 @@ ALL_QEMU_BINS = [
     QEMU_PATH_LINUX_ARM,
     QEMU_PATH_LINUX_AARCH64,
 ]
-
-BIN_PATH = "bin"
 
 def _clone_cgc_qemu():
     # grab the CGC repo
@@ -193,9 +198,32 @@ class develop(_develop):
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _develop.run(self)
 
+if 'bdist_wheel' in sys.argv and '--plat-name' not in sys.argv:
+    idx = sys.argv.index('bdist_wheel') + 1
+    sys.argv.insert(idx, '--plat-name')
+    name = get_platform()
+    if 'linux' in name:
+        # linux_* platform tags are disallowed because the python ecosystem is fubar
+        # linux builds should be built in the centos 5 vm for maximum compatibility
+        # see https://github.com/pypa/manylinux
+        # see also https://github.com/angr/angr-dev/blob/master/bdist.sh
+        sys.argv.insert(idx + 1, 'manylinux1_' + platform.machine())
+    else:
+        # https://www.python.org/dev/peps/pep-0425/
+        sys.argv.insert(idx + 1, name.replace('.', '_').replace('-', '_'))
+
+
 setup(
-    name='shellphish-qemu', version='0.9.6', description="A pip-installable set of qemus.",
+    name='shellphish-qemu',
+    version='0.9.7',
+    description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
-    data_files=[ ('bin', ALL_QEMU_BINS) ],
-    cmdclass={'build': build, 'develop': develop}
+    provides=['shellphish_qemu'],
+    requires=['pkg_resources'],
+    cmdclass={'build': build, 'develop': develop},
+    zip_safe=True,
+    include_package_data=True,
+    package_data={
+        'shellphish_qemu': ['bin/*']
+    }
 )
