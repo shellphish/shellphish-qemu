@@ -1,0 +1,8 @@
+build
+dist
+shellphish-qemu-cgc-base
+shellphish-qemu-linux
+shellphish_qemu/bin
+
+*.pyc
+*.egg-info
