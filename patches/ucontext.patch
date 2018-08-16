@@ -1,0 +1,192 @@
+diff --git a/linux-user/signal.c b/linux-user/signal.c
+index 5bb399e..bd50222 100644
+--- a/linux-user/signal.c
++++ b/linux-user/signal.c
+@@ -3024,7 +3024,7 @@ static void setup_rt_frame(int sig, struct target_sigaction *ka,
+     *
+     *   a0 = signal number
+     *   a1 = pointer to siginfo_t
+-    *   a2 = pointer to struct ucontext
++    *   a2 = pointer to ucontext_t
+     *
+     * $25 and PC point to the signal handler, $29 points to the
+     * struct sigframe.
+@@ -3417,7 +3417,7 @@ struct target_signal_frame {
+ 
+ struct rt_signal_frame {
+     siginfo_t info;
+-    struct ucontext uc;
++    ucontext_t uc;
+     uint32_t tramp[2];
+ };
+ 
+@@ -3628,7 +3628,7 @@ struct rt_signal_frame {
+         siginfo_t *pinfo;
+         void *puc;
+         siginfo_t info;
+-        struct ucontext uc;
++        ucontext_t uc;
+         uint16_t retcode[4];      /* Trampoline code. */
+ };
+ 
+@@ -3931,7 +3931,7 @@ static void setup_rt_frame(int sig, struct target_sigaction *ka,
+         tswap_siginfo(&frame->info, info);
+     }
+ 
+-    /*err |= __clear_user(&frame->uc, offsetof(struct ucontext, uc_mcontext));*/
++    /*err |= __clear_user(&frame->uc, offsetof(ucontext_t, uc_mcontext));*/
+     __put_user(0, &frame->uc.tuc_flags);
+     __put_user(0, &frame->uc.tuc_link);
+     __put_user(target_sigaltstack_used.ss_sp,
+@@ -4413,7 +4413,7 @@ enum {
+ 
+ struct target_ucontext {
+     target_ulong tuc_flags;
+-    target_ulong tuc_link;    /* struct ucontext __user * */
++    target_ulong tuc_link;    /* ucontext_t __user * */
+     struct target_sigaltstack tuc_stack;
+ #if !defined(TARGET_PPC64)
+     int32_t tuc_pad[7];
+diff --git a/tests/tcg/test-i386.c b/tests/tcg/test-i386.c
+index b05572b..dd522cf 100644
+--- a/tests/tcg/test-i386.c
++++ b/tests/tcg/test-i386.c
+@@ -1720,7 +1720,7 @@ int tab[2];
+ 
+ void sig_handler(int sig, siginfo_t *info, void *puc)
+ {
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ 
+     printf("si_signo=%d si_errno=%d si_code=%d",
+            info->si_signo, info->si_errno, info->si_code);
+@@ -1912,7 +1912,7 @@ void test_exceptions(void)
+ /* specific precise single step test */
+ void sig_trap_handler(int sig, siginfo_t *info, void *puc)
+ {
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     printf("EIP=" FMTLX "\n", (long)uc->uc_mcontext.gregs[REG_EIP]);
+ }
+ 
+diff --git a/user-exec.c b/user-exec.c
+index 8f57e8a..957f9f7 100644
+--- a/user-exec.c
++++ b/user-exec.c
+@@ -57,7 +57,7 @@ static void exception_action(CPUState *cpu)
+ void cpu_resume_from_signal(CPUState *cpu, void *puc)
+ {
+ #ifdef __linux__
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ #elif defined(__OpenBSD__)
+     struct sigcontext *uc = puc;
+ #endif
+@@ -171,7 +171,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ #elif defined(__OpenBSD__)
+     struct sigcontext *uc = puc;
+ #else
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ #endif
+     unsigned long pc;
+     int trapno;
+@@ -226,7 +226,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ #elif defined(__OpenBSD__)
+     struct sigcontext *uc = puc;
+ #else
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ #endif
+ 
+     pc = PC_sig(uc);
+@@ -288,7 +288,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ 
+ #ifdef __APPLE__
+ #include <sys/ucontext.h>
+-typedef struct ucontext SIGCONTEXT;
++typedef ucontext_t SIGCONTEXT;
+ /* All Registers access - only for local access */
+ #define REG_sig(reg_name, context)              \
+     ((context)->uc_mcontext->ss.reg_name)
+@@ -331,7 +331,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+     ucontext_t *uc = puc;
+ #else
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ #endif
+     unsigned long pc;
+     int is_write;
+@@ -358,7 +358,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+                            void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     uint32_t *pc = uc->uc_mcontext.sc_pc;
+     uint32_t insn = *pc;
+     int is_write = 0;
+@@ -456,7 +456,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ #if defined(__NetBSD__)
+     ucontext_t *uc = puc;
+ #else
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+ #endif
+     unsigned long pc;
+     int is_write;
+@@ -483,7 +483,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ int cpu_signal_handler(int host_signum, void *pinfo, void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     uintptr_t pc = uc->uc_mcontext.pc;
+     uint32_t insn = *(uint32_t *)pc;
+     bool is_write;
+@@ -512,7 +512,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+                        void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     unsigned long pc;
+     int is_write;
+ 
+@@ -534,7 +534,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+ int cpu_signal_handler(int host_signum, void *pinfo, void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     unsigned long ip;
+     int is_write = 0;
+ 
+@@ -565,7 +565,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+                        void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     unsigned long pc;
+     uint16_t *pinsn;
+     int is_write = 0;
+@@ -618,7 +618,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+                        void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     greg_t pc = uc->uc_mcontext.pc;
+     int is_write;
+ 
+@@ -634,7 +634,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+                        void *puc)
+ {
+     siginfo_t *info = pinfo;
+-    struct ucontext *uc = puc;
++    ucontext_t *uc = puc;
+     unsigned long pc = uc->uc_mcontext.sc_iaoq[0];
+     uint32_t insn = *(uint32_t *)pc;
+     int is_write = 0;

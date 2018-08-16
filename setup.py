@@ -17,6 +17,7 @@ BIN_PATH = os.path.join("shellphish_qemu", "bin")
 QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
+QEMU_LINUX_UPDATE_PATCH = os.path.join("..", "patches", "ucontext.patch")
 
 QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
 QEMU_PATH_CGC_NXTRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-nxtracer")
@@ -80,6 +81,8 @@ def _clone_linux_qemu():
         #   raise LibError("Unable to checkout version 2.3.0 of qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
             raise LibError("Unable to apply tracer patch to qemu")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
+            raise LibError("Unable to apply ucontext_t update patch to qemu")
 
 def _build_qemus():
     if not os.path.exists(BIN_PATH):
@@ -88,14 +91,14 @@ def _build_qemus():
         except OSError:
             raise LibError("Unable to create bin directory")
 
-    print "Configuring CGC tracer qemu..."
+    print("Configuring CGC tracer qemu...")
     if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
 
     if subprocess.call(['./cgc_configure_tracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
 
-    print "Building CGC tracer qemu..."
+    print("Building CGC tracer qemu...")
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc")
 
@@ -104,11 +107,11 @@ def _build_qemus():
     if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc")
 
-    print "Configuring CGC nxtracer qemu..."
+    print("Configuring CGC nxtracer qemu...")
     if subprocess.call(['./cgc_configure_nxtracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-nxtracer")
 
-    print "Building CGC nxtracer qemu..."
+    print("Building CGC nxtracer qemu...")
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc-nxtracer")
 
@@ -117,20 +120,20 @@ def _build_qemus():
     if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc")
 
-    print "Configuring CGC base qemu..."
+    print("Configuring CGC base qemu...")
     if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-base")
 
-    print "Building CGC base qemu..."
+    print("Building CGC base qemu...")
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc")
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
-    print "Configuring Linux qemu..."
+    print("Configuring Linux qemu...")
     if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
-    print "Building Linux qemu..."
+    print("Building Linux qemu...")
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
@@ -148,32 +151,32 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
-    os.chmod(QEMU_PATH_CGC_BASE, 0755)
-    os.chmod(QEMU_PATH_CGC_TRACER, 0755)
-    os.chmod(QEMU_PATH_CGC_NXTRACER, 0755)
-    os.chmod(QEMU_PATH_LINUX_I386, 0755)
-    os.chmod(QEMU_PATH_LINUX_X86_64, 0755)
-    os.chmod(QEMU_PATH_LINUX_MIPSEL, 0755)
-    os.chmod(QEMU_PATH_LINUX_MIPS, 0755)
-    os.chmod(QEMU_PATH_LINUX_MIPS64, 0755)
-    os.chmod(QEMU_PATH_LINUX_PPC, 0755)
-    os.chmod(QEMU_PATH_LINUX_PPC64, 0755)
-    os.chmod(QEMU_PATH_LINUX_ARM, 0755)
-    os.chmod(QEMU_PATH_LINUX_AARCH64, 0755)
+    os.chmod(QEMU_PATH_CGC_BASE, 0o755)
+    os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
+    os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
+    os.chmod(QEMU_PATH_LINUX_I386, 0o755)
+    os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPS, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPS64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_PPC, 0o755)
+    os.chmod(QEMU_PATH_LINUX_PPC64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_ARM, 0o755)
+    os.chmod(QEMU_PATH_LINUX_AARCH64, 0o755)
 
     try:
         cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
         cgc_tracer_ver = subprocess.check_output([QEMU_PATH_CGC_TRACER, '-version'])
         cgc_nxtracer_ver = subprocess.check_output([QEMU_PATH_CGC_NXTRACER, '-version'])
-        assert 'AFL' not in cgc_base_ver
-        assert 'AFL' not in cgc_tracer_ver
-        assert 'AFL' not in cgc_nxtracer_ver
-        assert 'TRACER' not in cgc_base_ver
-        assert 'TRACER' in cgc_tracer_ver
-        assert 'TRACER' in cgc_nxtracer_ver
-        assert 'enforce NX' not in cgc_base_ver    # Playing it safe
-        assert 'enforce NX' not in cgc_tracer_ver  # Playing it safe
-        assert 'enforce NX' in cgc_nxtracer_ver    # Mainly used by Antonio for CI tests
+        assert b'AFL' not in cgc_base_ver
+        assert b'AFL' not in cgc_tracer_ver
+        assert b'AFL' not in cgc_nxtracer_ver
+        assert b'TRACER' not in cgc_base_ver
+        assert b'TRACER' in cgc_tracer_ver
+        assert b'TRACER' in cgc_nxtracer_ver
+        assert b'enforce NX' not in cgc_base_ver    # Playing it safe
+        assert b'enforce NX' not in cgc_tracer_ver  # Playing it safe
+        assert b'enforce NX' in cgc_nxtracer_ver    # Mainly used by Antonio for CI tests
     except subprocess.CalledProcessError as e:
         raise LibError("Unable to check CGC qemu -version [ {} returned {}, output '{}' ]".format(e.cmd, e.returncode, e.output))
     except AssertionError:
@@ -215,7 +218,7 @@ if 'bdist_wheel' in sys.argv and '--plat-name' not in sys.argv:
 
 setup(
     name='shellphish-qemu',
-    version='0.9.7',
+    version='0.9.8',
     description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     provides=['shellphish_qemu'],
