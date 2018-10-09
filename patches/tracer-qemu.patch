@@ -24,16 +24,12 @@ index 2ffeb6e..3a9cd24 100644
  
  typedef struct SyncClocks {
      int64_t diff_clk;
-@@ -493,16 +495,23 @@ int cpu_exec(CPUArchState *env)
+@@ -493,16 +495,21 @@ int cpu_exec(CPUArchState *env)
                      tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
                  }
                  if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
--                    qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
--                             tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
-+                    /* tracer only cares about transitions in .text */
-+                    if (tb->pc >= tracer_code_start && tb->pc <= tracer_code_end)
-+                        qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
-+                                 tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
+                     qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
+                              tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
                  }
                  /* see if we can patch the calling TB. When the TB
                     spans two pages, we cannot safely do a direct
