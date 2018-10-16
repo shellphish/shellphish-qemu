@@ -18,6 +18,7 @@ QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
 QEMU_LINUX_UPDATE_PATCH = os.path.join("..", "patches", "ucontext.patch")
+QEMU_LINUX_CGC_PATCH = os.path.join("..", "patches", "newpatch")
 
 QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
 QEMU_PATH_CGC_NXTRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-nxtracer")
@@ -48,28 +49,28 @@ ALL_QEMU_BINS = [
     QEMU_PATH_LINUX_AARCH64,
 ]
 
-def _clone_cgc_qemu():
-    # grab the CGC repo
-    if not os.path.exists(QEMU_REPO_PATH_CGC_BASE) \
-            or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
-        TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
-        # since we're cloning from gitlab we'll need to try a couple times, since gitlab
-        # has a cap on the number of ssh workers
-        retrieved = False
-
-        for _ in range(10):
-            if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) == 0:
-                retrieved = True
-                break
-            else:
-                time.sleep(random.randint(0, 10))
-
-        if not retrieved:
-            raise LibError("Unable to retrieve tracer qemu")
-
-    # update tracer qemu for cgc
-    if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
-        raise LibError("Unable to retrieve cgc base qemu")
+# def _clone_cgc_qemu():
+#     # grab the CGC repo
+#     if not os.path.exists(QEMU_REPO_PATH_CGC_BASE) \
+#             or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
+#         TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
+#         # since we're cloning from gitlab we'll need to try a couple times, since gitlab
+#         # has a cap on the number of ssh workers
+#         retrieved = False
+#
+#         for _ in range(10):
+#             if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) == 0:
+#                 retrieved = True
+#                 break
+#             else:
+#                 time.sleep(random.randint(0, 10))
+#
+#         if not retrieved:
+#             raise LibError("Unable to retrieve tracer qemu")
+#
+#     # update tracer qemu for cgc
+#     if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+#         raise LibError("Unable to retrieve cgc base qemu")
 
 def _clone_linux_qemu():
     # grab the linux tarball
@@ -83,6 +84,8 @@ def _clone_linux_qemu():
             raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_CGC_PATCH]) != 0:
+            raise LibError("Unable to apply cgc_qemu patch to qemu")
 
 def _build_qemus():
     if not os.path.exists(BIN_PATH):
@@ -189,14 +192,14 @@ def _build_qemus():
 
 class build(_build):
     def run(self):
-            self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
+            # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _build.run(self)
 
 class develop(_develop):
     def run(self):
-            self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
+            # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _develop.run(self)
