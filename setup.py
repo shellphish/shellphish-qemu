@@ -176,7 +176,7 @@ def _build_qemus():
         assert b'AFL' not in cgc_tracer_ver
         assert b'AFL' not in cgc_nxtracer_ver
         # assert b'TRACER' not in cgc_base_ver
-        assert b'TRACER' not in cgc_tracer_ver
+        assert b'TRACER' in cgc_tracer_ver
         assert b'TRACER' in cgc_nxtracer_ver
         # assert b'enforce NX' not in cgc_base_ver    # Playing it safe
         assert b'enforce NX' not in cgc_tracer_ver  # Playing it safe
