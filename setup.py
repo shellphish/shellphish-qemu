@@ -18,7 +18,7 @@ QEMU_REPO_PATH_CGC_BASE = "shellphish-qemu-cgc-base"
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_TRACER_PATCH = os.path.join("..", "patches", "tracer-qemu.patch")
 QEMU_LINUX_UPDATE_PATCH = os.path.join("..", "patches", "ucontext.patch")
-QEMU_LINUX_CGC_PATCH = os.path.join("..", "patches", "newpatch")
+QEMU_LINUX_CGC_PATCH = os.path.join("..", "patches", "versionpatch")
 
 QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
 QEMU_PATH_CGC_NXTRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-nxtracer")
@@ -80,6 +80,7 @@ def _clone_linux_qemu():
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'checkout', 'tags/v2.3.0']) != 0:
         #   raise LibError("Unable to checkout version 2.3.0 of qemu")
+
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
             raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
