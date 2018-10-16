@@ -96,43 +96,43 @@ def _build_qemus():
             raise LibError("Unable to create bin directory")
 
     print("Configuring CGC tracer qemu...")
-    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
 
-    if subprocess.call(['./cgc_configure_tracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['./cgc_configure_tracer_opt'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
 
     print("Building CGC tracer qemu...")
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc")
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_TRACER)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_TRACER)
 
-    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc")
 
     print("Configuring CGC nxtracer qemu...")
-    if subprocess.call(['./cgc_configure_nxtracer_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['./cgc_configure_nxtracer_opt'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-nxtracer")
 
     print("Building CGC nxtracer qemu...")
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc-nxtracer")
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_NXTRACER)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_NXTRACER)
 
-    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to clean shellphish-qemu-cgc")
 
     print("Configuring CGC base qemu...")
-    if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['./cgc_configure_opt'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-base")
 
     print("Building CGC base qemu...")
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-cgc")
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
     print("Configuring Linux qemu...")
     if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
