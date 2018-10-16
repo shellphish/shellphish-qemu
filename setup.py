@@ -169,16 +169,16 @@ def _build_qemus():
     # os.chmod(QEMU_PATH_LINUX_AARCH64, 0o755)
 
     try:
-        cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
+        # cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
         cgc_tracer_ver = subprocess.check_output([QEMU_PATH_CGC_TRACER, '-version'])
         cgc_nxtracer_ver = subprocess.check_output([QEMU_PATH_CGC_NXTRACER, '-version'])
-        assert b'AFL' not in cgc_base_ver
+        # assert b'AFL' not in cgc_base_ver
         assert b'AFL' not in cgc_tracer_ver
         assert b'AFL' not in cgc_nxtracer_ver
-        assert b'TRACER' not in cgc_base_ver
+        # assert b'TRACER' not in cgc_base_ver
         assert b'TRACER' in cgc_tracer_ver
         assert b'TRACER' in cgc_nxtracer_ver
-        assert b'enforce NX' not in cgc_base_ver    # Playing it safe
+        # assert b'enforce NX' not in cgc_base_ver    # Playing it safe
         assert b'enforce NX' not in cgc_tracer_ver  # Playing it safe
         assert b'enforce NX' in cgc_nxtracer_ver    # Mainly used by Antonio for CI tests
     except subprocess.CalledProcessError as e:
