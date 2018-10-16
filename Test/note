@@ -1,5 +1,0 @@
-git checkout faa261a7fb254866bdd5b6a25ad94677945f21b4
-
-
-git apply --whitespace=warn --reject newpatch -p6
-
