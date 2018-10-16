@@ -84,7 +84,7 @@ def _clone_linux_qemu():
             raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_CGC_PATCH]) != 0:
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p6']) != 0:
             raise LibError("Unable to apply cgc_qemu patch to qemu")
 
 def _build_qemus():
