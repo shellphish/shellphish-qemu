@@ -80,10 +80,10 @@ def _clone_linux_qemu():
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'checkout', 'tags/v2.3.0']) != 0:
         #   raise LibError("Unable to checkout version 2.3.0 of qemu")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p6']) != 0:
-            pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
-            raise LibError("Unable to apply tracer patch to qemu")
+        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p6']) != 0:
+        #     pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
+        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
+        #     raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
 
@@ -142,30 +142,30 @@ def _build_qemus():
 
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mipsel-linux-user", "qemu-mipsel"), QEMU_PATH_LINUX_MIPSEL)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips-linux-user", "qemu-mips"), QEMU_PATH_LINUX_MIPS)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips64-linux-user", "qemu-mips64"), QEMU_PATH_LINUX_MIPS64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc-linux-user", "qemu-ppc"), QEMU_PATH_LINUX_PPC)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc64-linux-user", "qemu-ppc64"), QEMU_PATH_LINUX_PPC64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
+
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mipsel-linux-user", "qemu-mipsel"), QEMU_PATH_LINUX_MIPSEL)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips-linux-user", "qemu-mips"), QEMU_PATH_LINUX_MIPS)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips64-linux-user", "qemu-mips64"), QEMU_PATH_LINUX_MIPS64)
+
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc-linux-user", "qemu-ppc"), QEMU_PATH_LINUX_PPC)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc64-linux-user", "qemu-ppc64"), QEMU_PATH_LINUX_PPC64)
+
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
     os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
     os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
     os.chmod(QEMU_PATH_LINUX_I386, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPS, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPS64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_PPC, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_PPC64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_ARM, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_AARCH64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPS, 0o755)
+    os.chmod(QEMU_PATH_LINUX_MIPS64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_PPC, 0o755)
+    os.chmod(QEMU_PATH_LINUX_PPC64, 0o755)
+    os.chmod(QEMU_PATH_LINUX_ARM, 0o755)
+    os.chmod(QEMU_PATH_LINUX_AARCH64, 0o755)
 
     try:
         # cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
