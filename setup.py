@@ -88,6 +88,12 @@ def _clone_linux_qemu():
         #     pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
 
 def _build_standard_qemu():
+    if not os.path.exists(BIN_PATH):
+        try:
+            os.makedirs(BIN_PATH)
+        except OSError:
+            raise LibError("Unable to create bin directory")
+
     print("Configuring Linux qemu...")
     if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
@@ -126,12 +132,12 @@ def _build_standard_qemu():
 
 
 def _build_qemus():
-    if not os.path.exists(BIN_PATH):
-        try:
-            os.makedirs(BIN_PATH)
-        except OSError:
-            raise LibError("Unable to create bin directory")
-
+    # if not os.path.exists(BIN_PATH):
+    #     try:
+    #         os.makedirs(BIN_PATH)
+    #     except OSError:
+    #         raise LibError("Unable to create bin directory")
+    #
     print("Patching Qemu to deal with CGC")
     if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
         pass
