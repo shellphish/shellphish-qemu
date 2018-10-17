@@ -80,12 +80,20 @@ def _clone_linux_qemu():
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'checkout', 'tags/v2.3.0']) != 0:
         #   raise LibError("Unable to checkout version 2.3.0 of qemu")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
-            pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
-        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
-        #     raise LibError("Unable to apply tracer patch to qemu")
-        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
-            # raise LibError("Unable to apply ucontext_t update patch to qemu")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
+            raise LibError("Unable to apply tracer patch to qemu")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
+            raise LibError("Unable to apply ucontext_t update patch to qemu")
+        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
+        #     pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
+
+def _build_standard_qemu():
+    print("Configuring Linux qemu...")
+    if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+        raise LibError("Unable to configure shellphish-qemu-linux")
+    print("Building Linux qemu...")
+    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+        raise LibError("Unable to build shellphish-qemu-linux")
 
 def _build_qemus():
     if not os.path.exists(BIN_PATH):
@@ -94,9 +102,13 @@ def _build_qemus():
         except OSError:
             raise LibError("Unable to create bin directory")
 
+    print("Patching Qemu to deal with CGC")
+    if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
+        pass
+
     print("Configuring CGC tracer qemu...")
-    # if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_LINUX) != 0:
-    #     raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
+    if subprocess.call(['make', 'clean'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+        raise LibError("Unable to clean shellphish-qemu-cgc-tracer")
 
     if subprocess.call(['./cgc_configure_tracer_opt'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-cgc-tracer")
@@ -133,12 +145,12 @@ def _build_qemus():
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
-    print("Configuring Linux qemu...")
-    if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
-        raise LibError("Unable to configure shellphish-qemu-linux")
-    print("Building Linux qemu...")
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
-        raise LibError("Unable to build shellphish-qemu-linux")
+    # print("Configuring Linux qemu...")
+    # if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+    #     raise LibError("Unable to configure shellphish-qemu-linux")
+    # print("Building Linux qemu...")
+    # if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+    #     raise LibError("Unable to build shellphish-qemu-linux")
 
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
@@ -194,6 +206,7 @@ class build(_build):
     def run(self):
             # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
+            self.execute(_build_standard_qemu, (), msg="Building normal QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _build.run(self)
 
@@ -201,6 +214,7 @@ class develop(_develop):
     def run(self):
             # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
+            self.execute(_build_standard_qemu, (), msg="Building normal QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _develop.run(self)
 
