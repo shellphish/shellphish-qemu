@@ -94,6 +94,7 @@ def _build_standard_qemu():
         except OSError:
             raise LibError("Unable to create bin directory")
 
+    print("Folder created")
     print("Configuring Linux qemu...")
     if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
@@ -101,8 +102,11 @@ def _build_standard_qemu():
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
+    print("Time to copy")
+    
     time.sleep(3)
 
+    print("Time to copy")
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
 
