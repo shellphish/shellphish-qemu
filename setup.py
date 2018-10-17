@@ -49,29 +49,6 @@ ALL_QEMU_BINS = [
     QEMU_PATH_LINUX_AARCH64,
 ]
 
-# def _clone_cgc_qemu():
-#     # grab the CGC repo
-#     if not os.path.exists(QEMU_REPO_PATH_CGC_BASE) \
-#             or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
-#         TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
-#         # since we're cloning from gitlab we'll need to try a couple times, since gitlab
-#         # has a cap on the number of ssh workers
-#         retrieved = False
-#
-#         for _ in range(10):
-#             if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) == 0:
-#                 retrieved = True
-#                 break
-#             else:
-#                 time.sleep(random.randint(0, 10))
-#
-#         if not retrieved:
-#             raise LibError("Unable to retrieve tracer qemu")
-#
-#     # update tracer qemu for cgc
-#     if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
-#         raise LibError("Unable to retrieve cgc base qemu")
-
 def _clone_linux_qemu():
     # grab the linux tarball
     if not os.path.exists(QEMU_REPO_PATH_LINUX):
@@ -170,51 +147,17 @@ def _build_qemus():
 
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
-    # print("Configuring Linux qemu...")
-    # if subprocess.call(['./tracer-config'], cwd=QEMU_REPO_PATH_LINUX) != 0:
-    #     raise LibError("Unable to configure shellphish-qemu-linux")
-    # print("Building Linux qemu...")
-    # if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
-    #     raise LibError("Unable to build shellphish-qemu-linux")
-
-
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mipsel-linux-user", "qemu-mipsel"), QEMU_PATH_LINUX_MIPSEL)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips-linux-user", "qemu-mips"), QEMU_PATH_LINUX_MIPS)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips64-linux-user", "qemu-mips64"), QEMU_PATH_LINUX_MIPS64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc-linux-user", "qemu-ppc"), QEMU_PATH_LINUX_PPC)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc64-linux-user", "qemu-ppc64"), QEMU_PATH_LINUX_PPC64)
-    #
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
-    # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
-    #
     os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
     os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_I386, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPS, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_MIPS64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_PPC, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_PPC64, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_ARM, 0o755)
-    # os.chmod(QEMU_PATH_LINUX_AARCH64, 0o755)
-    #
+
     try:
-        # cgc_base_ver = subprocess.check_output([QEMU_PATH_CGC_BASE, '-version'])
         cgc_tracer_ver = subprocess.check_output([QEMU_PATH_CGC_TRACER, '-version'])
         cgc_nxtracer_ver = subprocess.check_output([QEMU_PATH_CGC_NXTRACER, '-version'])
-        # assert b'AFL' not in cgc_base_ver
         assert b'AFL' not in cgc_tracer_ver
         assert b'AFL' not in cgc_nxtracer_ver
-        # assert b'TRACER' not in cgc_base_ver
         assert b'TRACER' in cgc_tracer_ver
         assert b'TRACER' in cgc_nxtracer_ver
-        # assert b'enforce NX' not in cgc_base_ver    # Playing it safe
         assert b'enforce NX' not in cgc_tracer_ver  # Playing it safe
         assert b'enforce NX' in cgc_nxtracer_ver    # Mainly used by Antonio for CI tests
     except subprocess.CalledProcessError as e:
@@ -229,14 +172,12 @@ def _build_qemus():
 
 class build(_build):
     def run(self):
-            # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _build.run(self)
 
 class develop(_develop):
     def run(self):
-            # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _develop.run(self)
