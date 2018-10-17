@@ -102,8 +102,6 @@ def _build_standard_qemu():
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
-    print("Time to copy")
-    
     time.sleep(3)
 
     print("Time to copy")
@@ -120,9 +118,10 @@ def _build_standard_qemu():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
-    os.chmod(QEMU_PATH_CGC_BASE, 0o755)
-    os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
-    os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
+    # os.chmod(QEMU_PATH_CGC_BASE, 0o755)
+    print("hello")
+    # os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
+    # os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
     os.chmod(QEMU_PATH_LINUX_I386, 0o755)
     os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
     os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
@@ -207,8 +206,8 @@ def _build_qemus():
     # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
     #
     # os.chmod(QEMU_PATH_CGC_BASE, 0o755)
-    # os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
-    # os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
+    os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
+    os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
     # os.chmod(QEMU_PATH_LINUX_I386, 0o755)
     # os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
     # os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
