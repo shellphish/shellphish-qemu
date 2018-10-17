@@ -78,15 +78,12 @@ def _clone_linux_qemu():
         TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
         if subprocess.call(['git', 'clone', '--branch', 'v2.3.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
-        #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'checkout', 'tags/v2.3.0']) != 0:
-        #   raise LibError("Unable to checkout version 2.3.0 of qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
             raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
         _build_standard_qemu()
-        # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
-        #     pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
+
 
 def _build_standard_qemu():
     if not os.path.exists(BIN_PATH):
@@ -103,9 +100,6 @@ def _build_standard_qemu():
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
-    time.sleep(3)
-
-    print("Time to copy")
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
 
@@ -119,9 +113,7 @@ def _build_standard_qemu():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
-    os.chmod(QEMU_PATH_CGC_BASE, 0o755)
-    # os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
-    # os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
+    # os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     os.chmod(QEMU_PATH_LINUX_I386, 0o755)
     os.chmod(QEMU_PATH_LINUX_X86_64, 0o755)
     os.chmod(QEMU_PATH_LINUX_MIPSEL, 0o755)
@@ -135,12 +127,6 @@ def _build_standard_qemu():
 
 
 def _build_qemus():
-    # if not os.path.exists(BIN_PATH):
-    #     try:
-    #         os.makedirs(BIN_PATH)
-    #     except OSError:
-    #         raise LibError("Unable to create bin directory")
-    #
     print("Patching Qemu to deal with CGC")
     if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
         pass
@@ -205,7 +191,7 @@ def _build_qemus():
     # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     # shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
     #
-    # os.chmod(QEMU_PATH_CGC_BASE, 0o755)
+    os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
     os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
     # os.chmod(QEMU_PATH_LINUX_I386, 0o755)
