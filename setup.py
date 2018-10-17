@@ -84,6 +84,7 @@ def _clone_linux_qemu():
             raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
+        _build_standard_qemu()
         # if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
         #     pass #raise LibError("Unable to apply cgc_qemu patch to qemu")
 
@@ -118,8 +119,7 @@ def _build_standard_qemu():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
-    # os.chmod(QEMU_PATH_CGC_BASE, 0o755)
-    print("hello")
+    os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     # os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
     # os.chmod(QEMU_PATH_CGC_NXTRACER, 0o755)
     os.chmod(QEMU_PATH_LINUX_I386, 0o755)
@@ -245,7 +245,6 @@ class build(_build):
     def run(self):
             # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
-            self.execute(_build_standard_qemu, (), msg="Building normal QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _build.run(self)
 
@@ -253,7 +252,6 @@ class develop(_develop):
     def run(self):
             # self.execute(_clone_cgc_qemu, (), msg="Cloning CGC QEMU")
             self.execute(_clone_linux_qemu, (), msg="Cloning Linux QEMU")
-            self.execute(_build_standard_qemu, (), msg="Building normal QEMU")
             self.execute(_build_qemus, (), msg="Building Tracer QEMU")
             _develop.run(self)
 
