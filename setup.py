@@ -34,6 +34,8 @@ QEMU_PATH_LINUX_PPC64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-ppc64")
 QEMU_PATH_LINUX_ARM = os.path.join(BIN_PATH, "shellphish-qemu-linux-arm")
 QEMU_PATH_LINUX_AARCH64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-aarch64")
 
+QEMU_REMOVE_UNWANTED_FILES = os.path.join("..","patches")
+
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
     QEMU_PATH_CGC_TRACER,
@@ -103,6 +105,9 @@ def _build_standard_qemu():
 
 
 def _build_qemus():
+    print("Deleting unwanted files from Qemu")
+    subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
+
     print("Patching Qemu to deal with CGC")
     if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
         pass
