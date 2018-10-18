@@ -34,7 +34,7 @@ QEMU_PATH_LINUX_PPC64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-ppc64")
 QEMU_PATH_LINUX_ARM = os.path.join(BIN_PATH, "shellphish-qemu-linux-arm")
 QEMU_PATH_LINUX_AARCH64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-aarch64")
 
-QEMU_REMOVE_UNWANTED_FILES = "patches"
+QEMU_REMOVE_UNWANTED_FILES = "/patches"
 
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
