@@ -109,7 +109,7 @@ def _build_qemus():
     subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
 
     print("Patching Qemu to deal with CGC")
-    if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p5']) != 0:
+    if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p6']) != 0:
         pass
 
     print("Configuring CGC tracer qemu...")
