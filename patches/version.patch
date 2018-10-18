@@ -12,12 +12,12 @@ index 28999d3..149ae03 100644
 +++ b/home/gkrishna/Shelly/qemu-cgc/Makefile.objs
 @@ -55,7 +55,7 @@ common-obj-y += qjson.o
 
-common-obj-$(CONFIG_SPICE) += spice-qemu-char.o
+ common-obj-$(CONFIG_SPICE) += spice-qemu-char.o
 
 -common-obj-y += audio/
 +#common-obj-y += audio/
-common-obj-y += hw/
-common-obj-y += accel.o
+ common-obj-y += hw/
+ common-obj-y += accel.o
 
 diff --git a/home/gkrishna/Shelly/qemu-cgc/README.md b/home/gkrishna/Shelly/qemu-cgc/README.md
 new file mode 100644
