@@ -105,8 +105,10 @@ def _build_standard_qemu():
 
 
 def _build_qemus():
-    print("Deleting unwanted files from Qemu")
-    subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
+    # print("Deleting unwanted files from Qemu")
+    # subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
+    if subprocess.call(['git', 'clone', '--branch', 'v2.3.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
+        raise LibError("Something went wrong!!")
 
     print("Patching Qemu to deal with CGC")
     if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', '--whitespace=warn', '--reject', QEMU_LINUX_CGC_PATCH, '-p6']) != 0:
