@@ -107,6 +107,10 @@ def _build_standard_qemu():
 def _build_qemus():
     # print("Deleting unwanted files from Qemu")
     # subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
+    TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
+    if subprocess.call(['rm','-rf', QEMU_REPO_PATH_LINUX]) != 0:
+        raise LibError("Something wrong while deleting folder!")
+        
     if subprocess.call(['git', 'clone', '--branch', 'v2.3.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
         raise LibError("Something went wrong!!")
 
