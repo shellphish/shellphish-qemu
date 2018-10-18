@@ -35,6 +35,7 @@ QEMU_PATH_LINUX_ARM = os.path.join(BIN_PATH, "shellphish-qemu-linux-arm")
 QEMU_PATH_LINUX_AARCH64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-aarch64")
 
 QEMU_REMOVE_UNWANTED_FILES = "patches"
+TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
 
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
@@ -54,7 +55,6 @@ ALL_QEMU_BINS = [
 def _clone_linux_qemu():
     # grab the linux tarball
     if not os.path.exists(QEMU_REPO_PATH_LINUX):
-        TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
         if subprocess.call(['git', 'clone', '--branch', 'v2.3.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_TRACER_PATCH]) != 0:
@@ -105,12 +105,9 @@ def _build_standard_qemu():
 
 
 def _build_qemus():
-    # print("Deleting unwanted files from Qemu")
-    # subprocess.call(['./removal'], cwd=QEMU_REMOVE_UNWANTED_FILES)
-    TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
     if subprocess.call(['rm','-rf', QEMU_REPO_PATH_LINUX]) != 0:
         raise LibError("Something wrong while deleting folder!")
-        
+
     if subprocess.call(['git', 'clone', '--branch', 'v2.3.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
         raise LibError("Something went wrong!!")
 
