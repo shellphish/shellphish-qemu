@@ -1,0 +1,13 @@
+diff --git a/linux-user/elfload.c b/linux-user/elfload.c
+index a8bc667..ea721ff 100644
+--- a/linux-user/elfload.c
++++ b/linux-user/elfload.c
+@@ -1412,7 +1412,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
+     base_filename = strdup(basename(filename));
+     (void) strftime(timestamp, sizeof (timestamp), "%Y%m%d-%H%M%S",
+                     localtime_r(&tv.tv_sec, &tm));
+-    (void) snprintf(buf, bufsize, "qemu_%s_%s_%d.core",
++    (void) snprintf(buf, bufsize, "/tmp/qemu_%s_%s_%d.core",
+                     base_filename, timestamp, (int)getpid());
+     free(base_filename);
+     free(filename);
