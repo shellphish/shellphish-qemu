@@ -85,7 +85,7 @@ def _clone_linux_qemu():
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_UPDATE_PATCH]) != 0:
             raise LibError("Unable to apply ucontext_t update patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_CGC_BASE, 'apply', QEMU_CGC_COREDUMP_PATCH]) != 0:
-            raise LibError("Unable to apply ucontext_t update patch to qemu")
+            raise LibError("Unable to apply coredump update patch to qemu-cgc-base")
 
 def _build_qemus():
     if not os.path.exists(BIN_PATH):
