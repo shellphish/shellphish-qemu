@@ -15,7 +15,7 @@ index a8bc667..0517c0a 100644
      return (0);
  }
  
-+char *coredump_prefix = (char *)".";
++const char *coredump_prefix = ".";
 +void qemu_set_core_dump_prefix(const char *prefix)
 +{
 +    struct stat path_stat;
