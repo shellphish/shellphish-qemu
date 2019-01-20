@@ -1,0 +1,30 @@
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 643b883..edac1f9 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -250,6 +250,8 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
+ #define TARGET_NR__llseek TARGET_NR_llseek
+ #endif
+ 
++static bool last_read_empty = false;
++
+ #ifdef __NR_gettid
+ _syscall0(int, gettid)
+ #else
+@@ -7936,6 +7938,16 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                 goto efault;
+             ret = get_errno(safe_read(arg1, p, arg3));
++
++            if (ret == 0) {
++                if (last_read_empty) {
++                    exit_group(1);
++                }
++                last_read_empty = true;
++            } else {
++                last_read_empty = false;
++            }
++
+             if (ret >= 0 &&
+                 fd_trans_host_to_target_data(arg1)) {
+                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
