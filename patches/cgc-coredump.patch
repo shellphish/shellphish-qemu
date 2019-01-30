@@ -78,23 +78,22 @@ index 48d1abc..dc90d1f 100644
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
-index 6ff19f4..3cf7f20 100644
+index 6ff19f4..0d53360 100644
 --- a/linux-user/signal.c
 +++ b/linux-user/signal.c
-@@ -467,8 +467,14 @@ static void QEMU_NORETURN force_sig(int target_sig)
+@@ -465,11 +465,11 @@ static void QEMU_NORETURN force_sig(int target_sig)
+         getrlimit(RLIMIT_CORE, &nodump);
+         nodump.rlim_cur=0;
          setrlimit(RLIMIT_CORE, &nodump);
-         qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
-             target_sig, strsignal(host_sig), "core dumped",env->eip);
+-        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
+-            target_sig, strsignal(host_sig), "core dumped",env->eip);
 -        (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s\n",
 -            target_sig, strsignal(host_sig), "core dumped" );
-+        (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s [%08x]\n",
-+            target_sig, strsignal(host_sig), "core dumped", env->eip);
-+    } else {
-+        // log crash address even if core file is not dumped.
-+        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
-+                 target_sig, strsignal(host_sig), "core not available", env->eip);
-+        (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s [%08x]\n",
-+                       target_sig, strsignal(host_sig), "core not available", env->eip);
      }
++    (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s [%08x]\n",
++        target_sig, strsignal(host_sig), "core dumped", env->eip);
++    qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
++        target_sig, strsignal(host_sig), "core dumped",env->eip);
  
      /* The proper exit code for dying from an uncaught signal is
+      * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
