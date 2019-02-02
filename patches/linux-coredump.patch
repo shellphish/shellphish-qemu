@@ -78,3 +78,33 @@ index 192a0d2..1662b53 100644
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
+diff --git a/linux-user/signal.c b/linux-user/signal.c
+index b283270..e9f3e8c 100644
+--- a/linux-user/signal.c
++++ b/linux-user/signal.c
+@@ -555,6 +555,8 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+     TaskState *ts = (TaskState *)cpu->opaque;
+     int host_sig, core_dumped = 0;
+     struct sigaction act;
++    target_ulong cs_base, pc;
++    uint32_t flags;
+ 
+     host_sig = target_to_host_signal(target_sig);
+     trace_user_force_sig(env, target_sig, host_sig);
+@@ -577,6 +579,16 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+             target_sig, strsignal(host_sig), "core dumped" );
+     }
+ 
++    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
++    if(sizeof(target_ulong) == 4){
++        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
++            target_sig, strsignal(host_sig), "core dumped", (unsigned int)pc);
++    }
++    else if(sizeof(target_ulong) == 8){
++        qemu_log("qemu: uncaught target signal %d (%s) - %s [%016llx]\n",
++            target_sig, strsignal(host_sig), "core dumped", (unsigned long long)pc);
++    }
++
+     /* The proper exit code for dying from an uncaught signal is
+      * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
+      * a negative value.  To get the proper exit code we need to
