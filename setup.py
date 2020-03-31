@@ -76,7 +76,7 @@ def _clone_linux_qemu():
     # grab the linux tarball
     if not os.path.exists(QEMU_REPO_PATH_LINUX):
         TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
-        if subprocess.call(['git', 'clone', '--branch', 'v2.12.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
+        if subprocess.call(['git', 'clone', '--branch', 'v5.0.0-rc1', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
             raise LibError("Unable to apply tracer patch to qemu")
@@ -132,7 +132,7 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
     print("Configuring Linux qemu...")
-    if subprocess.call("./configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python2`", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
+    if subprocess.call("./configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3`", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
     print("Building Linux qemu...")
     if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
@@ -219,10 +219,11 @@ if 'bdist_wheel' in sys.argv and '--plat-name' not in sys.argv:
 
 setup(
     name='shellphish-qemu',
-    version='0.9.12',
+    version='0.10.0',
     description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     provides=['shellphish_qemu'],
+    python_requires='>=3.5',
     requires=['pkg_resources'],
     cmdclass={'build': build, 'develop': develop},
     zip_safe=True,
