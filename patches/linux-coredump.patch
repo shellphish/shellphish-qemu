@@ -1,5 +1,5 @@
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..a2431c3 100644
+index 8198be0..8a92c67 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -8,13 +8,50 @@ index 8198be0..a2431c3 100644
  #include <sys/param.h>
 +#include <sys/types.h>
 +#include <sys/stat.h>
-
+ 
  #include <sys/resource.h>
  #include <sys/shm.h>
+@@ -3193,21 +3195,21 @@ static abi_ulong vma_dump_size(const struct vm_area_struct *vma)
+      * and check whether it contains elf header.  If there is
+      * no elf header, we dump it.
+      */
+-    if (vma->vma_flags & PROT_EXEC) {
+-        char page[TARGET_PAGE_SIZE];
+-
+-        copy_from_user(page, vma->vma_start, sizeof (page));
+-        if ((page[EI_MAG0] == ELFMAG0) &&
+-            (page[EI_MAG1] == ELFMAG1) &&
+-            (page[EI_MAG2] == ELFMAG2) &&
+-            (page[EI_MAG3] == ELFMAG3)) {
+-            /*
+-             * Mappings are possibly from ELF binary.  Don't dump
+-             * them.
+-             */
+-            return (0);
+-        }
+-    }
++    // if (vma->vma_flags & PROT_EXEC) {
++    //     char page[TARGET_PAGE_SIZE];
++
++    //     copy_from_user(page, vma->vma_start, sizeof (page));
++    //     if ((page[EI_MAG0] == ELFMAG0) &&
++    //         (page[EI_MAG1] == ELFMAG1) &&
++    //         (page[EI_MAG2] == ELFMAG2) &&
++    //         (page[EI_MAG3] == ELFMAG3)) {
++    //         /*
++    //          * Mappings are possibly from ELF binary.  Don't dump
++    //          * them.
++    //          */
++    //         return (0);
++    //     }
++    // }
+ 
+     return (vma->vma_end - vma->vma_start);
+ }
 @@ -3357,6 +3359,19 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
      }
  }
-
+ 
 +const char *coredump_prefix = ".";
 +void qemu_set_core_dump_prefix(const char *prefix)
 +{
@@ -39,7 +76,7 @@ index 8198be0..a2431c3 100644
 +    (void) snprintf(buf, bufsize, "%s/qemu_%s_%s_%d.core", coredump_prefix,
                      base_filename, timestamp, (int)getpid());
      g_free(base_filename);
-
+ 
 diff --git a/linux-user/main.c b/linux-user/main.c
 index 22578b1..ee5ca09 100644
 --- a/linux-user/main.c
@@ -47,7 +84,7 @@ index 22578b1..ee5ca09 100644
 @@ -288,6 +288,11 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
-
+ 
 +static void handle_arg_core(const char *arg)
 +{
 +    qemu_set_core_dump_prefix(arg);
@@ -74,7 +111,7 @@ index 792c742..f59c86d 100644
  int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
  int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 +void qemu_set_core_dump_prefix(const char *prefix);
-
+ 
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
@@ -87,13 +124,13 @@ index 8cf51ff..3322d2c 100644
      struct sigaction act;
 +    target_ulong cs_base, pc;
 +    uint32_t flags;
-
+ 
      host_sig = target_to_host_signal(target_sig);
      trace_user_force_sig(env, target_sig, host_sig);
 @@ -649,6 +651,16 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
              target_sig, strsignal(host_sig), "core dumped" );
      }
-
+ 
 +    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 +    if (sizeof(target_ulong) == 4) {
 +        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
@@ -107,5 +144,3 @@ index 8cf51ff..3322d2c 100644
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
---
-2.17.1
