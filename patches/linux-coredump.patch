@@ -1,5 +1,17 @@
+diff --git a/include/elf.h b/include/elf.h
+index 8fbfe60..79e5fbc 100644
+--- a/include/elf.h
++++ b/include/elf.h
+@@ -1634,6 +1634,7 @@ typedef struct elf64_shdr {
+ #define NT_TASKSTRUCT	4
+ #define NT_AUXV		6
+ #define NT_PRXFPREG     0x46e62b7f      /* copied from gdb5.1/include/elf/common.h */
++#define NT_FILE     0x46494c45          /* copied from gdb5.1/include/elf/common.h */
+ #define NT_S390_GS_CB   0x30b           /* s390 guarded storage registers */
+ #define NT_S390_VXRS_HIGH 0x30a         /* s390 vector registers 16-31 */
+ #define NT_S390_VXRS_LOW  0x309         /* s390 vector registers 0-15 (lower half) */
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..8a92c67 100644
+index 8198be0..71601c9 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -11,7 +23,21 @@ index 8198be0..8a92c67 100644
  
  #include <sys/resource.h>
  #include <sys/shm.h>
-@@ -3193,21 +3195,21 @@ static abi_ulong vma_dump_size(const struct vm_area_struct *vma)
+@@ -2999,6 +3001,13 @@ struct target_elf_prpsinfo {
+     char    pr_psargs[ELF_PRARGSZ]; /* initial part of arg list */
+ };
+ 
++struct target_ntfile_entry {
++    abi_ulong   vm_start;
++    abi_ulong   vm_end;
++    abi_ulong   page_offset;
++    char        *path;
++};
++
+ /* Here is the structure in which status of each thread is captured. */
+ struct elf_thread_status {
+     QTAILQ_ENTRY(elf_thread_status)  ets_link;
+@@ -3193,21 +3202,21 @@ static abi_ulong vma_dump_size(const struct vm_area_struct *vma)
       * and check whether it contains elf header.  If there is
       * no elf header, we dump it.
       */
@@ -48,10 +74,88 @@ index 8198be0..8a92c67 100644
  
      return (vma->vma_end - vma->vma_start);
  }
-@@ -3357,6 +3359,19 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
+@@ -3357,6 +3366,97 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
      }
  }
  
++static void fill_ntfile_note(struct memelfnote *note, TaskState *ts)
++{
++    GSList *map_info = read_self_maps();
++    GSList *s;
++    int count = 0;
++    int data_size = sizeof(abi_long)*2; // reserve space for num_map_entry and page_size
++    struct target_ntfile_entry *entries = NULL;
++
++    // grab memory mapping first
++    for (s = map_info; s; s = g_slist_next(s)) {
++        MapInfo *e = (MapInfo *) s->data;
++
++        if (h2g_valid(e->start)) {
++            unsigned long min = e->start;
++            unsigned long max = e->end;
++            int flags = page_get_flags(h2g(min));
++            const char *path;
++
++            max = h2g_valid(max - 1) ?
++                max : (uintptr_t) g2h(GUEST_ADDR_MAX) + 1;
++
++            if (page_check_range(h2g(min), max - min, flags) == -1) {
++                continue;
++            }
++
++            if (h2g(min) == ts->info->stack_limit) {
++                path = "[stack]";
++            } else {
++                path = e->path;
++            }
++
++            count++;
++            entries = realloc(entries, sizeof(struct target_ntfile_entry)*count);
++            struct target_ntfile_entry *entry = &entries[count-1];
++            memset(entry, 0, sizeof(*entry));
++
++            data_size += sizeof(abi_long)*3 + strlen(path) + 1;
++            entry->vm_start = h2g(min);
++            entry->vm_end = h2g(max - 1) + 1;
++            entry->page_offset = e->offset;
++            entry->path = strdup(path);
++        }
++    }
++
++    // prepare the memory mapping in NT_FILE format
++    char *ptr;
++    int idx = 0;
++    ptr = (char *)g_malloc0(data_size);
++    abi_long *long_ptr = (abi_long *)ptr;
++
++    // memory mappings
++    long_ptr[idx++] = count;    // number of map entries
++    long_ptr[idx++] = TARGET_PAGE_SIZE;   // target page size
++    for(int i=0; i<count; i++) {
++        struct target_ntfile_entry *entry = &entries[i];
++        long_ptr[idx++] = entry->vm_start;
++        long_ptr[idx++] = entry->vm_end;
++        long_ptr[idx++] = entry->page_offset;
++    }
++
++    // path names
++    idx *= sizeof(abi_long);
++    for(int i=0; i<count; i++) {
++        struct target_ntfile_entry *entry = &entries[i];
++        int path_size = strlen(entry->path);
++        strcpy(&ptr[idx], entry->path);
++        idx += path_size + 1;
++        free(entry->path);
++    }
++
++    // write it out
++    fill_note(note, "CORE", NT_FILE, data_size, ptr);
++
++    // cleanup
++    free(entries);
++    free_self_maps(map_info);
++}
++
 +const char *coredump_prefix = ".";
 +void qemu_set_core_dump_prefix(const char *prefix)
 +{
@@ -68,7 +172,7 @@ index 8198be0..8a92c67 100644
  /*
   * Constructs name of coredump file.  We have following convention
   * for the name:
-@@ -3383,7 +3398,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
+@@ -3383,7 +3483,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
      base_filename = g_path_get_basename(ts->bprm->filename);
      (void) strftime(timestamp, sizeof (timestamp), "%Y%m%d-%H%M%S",
                      localtime_r(&tv.tv_sec, &tm));
@@ -77,6 +181,34 @@ index 8198be0..8a92c67 100644
                      base_filename, timestamp, (int)getpid());
      g_free(base_filename);
  
+@@ -3487,7 +3587,7 @@ static void init_note_info(struct elf_note_info *info)
+ static int fill_note_info(struct elf_note_info *info,
+                           long signr, const CPUArchState *env)
+ {
+-#define NUMNOTES 3
++#define NUMNOTES 4
+     CPUState *cpu = env_cpu((CPUArchState *)env);
+     TaskState *ts = (TaskState *)cpu->opaque;
+     int i;
+@@ -3504,7 +3604,7 @@ static int fill_note_info(struct elf_note_info *info,
+ 
+     /*
+      * First fill in status (and registers) of current thread
+-     * including process info & aux vector.
++     * including process info, aux vector & memory mapping.
+      */
+     fill_prstatus(info->prstatus, ts, signr);
+     elf_core_copy_regs(&info->prstatus->pr_reg, env);
+@@ -3514,7 +3614,8 @@ static int fill_note_info(struct elf_note_info *info,
+     fill_note(&info->notes[1], "CORE", NT_PRPSINFO,
+               sizeof (*info->psinfo), info->psinfo);
+     fill_auxv_note(&info->notes[2], ts);
+-    info->numnote = 3;
++    fill_ntfile_note(&info->notes[3], ts);
++    info->numnote = NUMNOTES;
+ 
+     info->notes_size = 0;
+     for (i = 0; i < info->numnote; i++)
 diff --git a/linux-user/main.c b/linux-user/main.c
 index 22578b1..ee5ca09 100644
 --- a/linux-user/main.c
