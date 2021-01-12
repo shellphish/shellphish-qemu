@@ -11,7 +11,7 @@ index 8fbfe60..79e5fbc 100644
  #define NT_S390_VXRS_HIGH 0x30a         /* s390 vector registers 16-31 */
  #define NT_S390_VXRS_LOW  0x309         /* s390 vector registers 0-15 (lower half) */
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..71601c9 100644
+index 8198be0..5703f2b 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -74,39 +74,46 @@ index 8198be0..71601c9 100644
  
      return (vma->vma_end - vma->vma_start);
  }
-@@ -3357,6 +3366,97 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
+@@ -3357,6 +3366,105 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
      }
  }
  
 +static void fill_ntfile_note(struct memelfnote *note, TaskState *ts)
 +{
-+    GSList *map_info = read_self_maps();
-+    GSList *s;
++    FILE *fp;
++    char *line = NULL;
++    size_t len = 0;
++    ssize_t read;
 +    int count = 0;
 +    int data_size = sizeof(abi_long)*2; // reserve space for num_map_entry and page_size
 +    struct target_ntfile_entry *entries = NULL;
 +
++    fp = fopen("/proc/self/maps", "r");
++    if (fp == NULL) {
++        return -1;
++    }
++
 +    // grab memory mapping first
-+    for (s = map_info; s; s = g_slist_next(s)) {
-+        MapInfo *e = (MapInfo *) s->data;
++    while ((read = getline(&line, &len, fp)) != -1) {
++        int fields, dev_maj, dev_min, inode;
++        uint64_t min, max, offset;
++        char flag_r, flag_w, flag_x, flag_p;
++        char path[512] = "";
++        fields = sscanf(line, "%"PRIx64"-%"PRIx64" %c%c%c%c %"PRIx64" %x:%x %d"
++                        " %512s", &min, &max, &flag_r, &flag_w, &flag_x,
++                        &flag_p, &offset, &dev_maj, &dev_min, &inode, path);
 +
-+        if (h2g_valid(e->start)) {
-+            unsigned long min = e->start;
-+            unsigned long max = e->end;
++        if ((fields < 10) || (fields > 11)) {
++            continue;
++        }
++        if (h2g_valid(min)) {
 +            int flags = page_get_flags(h2g(min));
-+            const char *path;
-+
-+            max = h2g_valid(max - 1) ?
-+                max : (uintptr_t) g2h(GUEST_ADDR_MAX) + 1;
-+
++            max = h2g_valid(max - 1) ? max : (uintptr_t)g2h(GUEST_ADDR_MAX) + 1;
 +            if (page_check_range(h2g(min), max - min, flags) == -1) {
 +                continue;
 +            }
-+
 +            if (h2g(min) == ts->info->stack_limit) {
-+                path = "[stack]";
-+            } else {
-+                path = e->path;
++                strcpy(path, "      [stack]");
 +            }
 +
 +            count++;
@@ -117,7 +124,7 @@ index 8198be0..71601c9 100644
 +            data_size += sizeof(abi_long)*3 + strlen(path) + 1;
 +            entry->vm_start = h2g(min);
 +            entry->vm_end = h2g(max - 1) + 1;
-+            entry->page_offset = e->offset;
++            entry->page_offset = offset;
 +            entry->path = strdup(path);
 +        }
 +    }
@@ -153,7 +160,8 @@ index 8198be0..71601c9 100644
 +
 +    // cleanup
 +    free(entries);
-+    free_self_maps(map_info);
++    free(line);
++    fclose(fp);
 +}
 +
 +const char *coredump_prefix = ".";
@@ -172,7 +180,7 @@ index 8198be0..71601c9 100644
  /*
   * Constructs name of coredump file.  We have following convention
   * for the name:
-@@ -3383,7 +3483,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
+@@ -3383,7 +3491,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
      base_filename = g_path_get_basename(ts->bprm->filename);
      (void) strftime(timestamp, sizeof (timestamp), "%Y%m%d-%H%M%S",
                      localtime_r(&tv.tv_sec, &tm));
@@ -181,7 +189,7 @@ index 8198be0..71601c9 100644
                      base_filename, timestamp, (int)getpid());
      g_free(base_filename);
  
-@@ -3487,7 +3587,7 @@ static void init_note_info(struct elf_note_info *info)
+@@ -3487,7 +3595,7 @@ static void init_note_info(struct elf_note_info *info)
  static int fill_note_info(struct elf_note_info *info,
                            long signr, const CPUArchState *env)
  {
@@ -190,7 +198,7 @@ index 8198be0..71601c9 100644
      CPUState *cpu = env_cpu((CPUArchState *)env);
      TaskState *ts = (TaskState *)cpu->opaque;
      int i;
-@@ -3504,7 +3604,7 @@ static int fill_note_info(struct elf_note_info *info,
+@@ -3504,7 +3612,7 @@ static int fill_note_info(struct elf_note_info *info,
  
      /*
       * First fill in status (and registers) of current thread
@@ -199,7 +207,7 @@ index 8198be0..71601c9 100644
       */
      fill_prstatus(info->prstatus, ts, signr);
      elf_core_copy_regs(&info->prstatus->pr_reg, env);
-@@ -3514,7 +3614,8 @@ static int fill_note_info(struct elf_note_info *info,
+@@ -3514,7 +3622,8 @@ static int fill_note_info(struct elf_note_info *info,
      fill_note(&info->notes[1], "CORE", NT_PRPSINFO,
                sizeof (*info->psinfo), info->psinfo);
      fill_auxv_note(&info->notes[2], ts);
