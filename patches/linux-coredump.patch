@@ -11,7 +11,7 @@ index 8fbfe60..79e5fbc 100644
  #define NT_S390_VXRS_HIGH 0x30a         /* s390 vector registers 16-31 */
  #define NT_S390_VXRS_LOW  0x309         /* s390 vector registers 0-15 (lower half) */
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..5703f2b 100644
+index 8198be0..3921fc1 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -74,7 +74,7 @@ index 8198be0..5703f2b 100644
  
      return (vma->vma_end - vma->vma_start);
  }
-@@ -3357,6 +3366,105 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
+@@ -3357,6 +3366,107 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
      }
  }
  
@@ -90,7 +90,7 @@ index 8198be0..5703f2b 100644
 +
 +    fp = fopen("/proc/self/maps", "r");
 +    if (fp == NULL) {
-+        return -1;
++        return;
 +    }
 +
 +    // grab memory mapping first
@@ -115,6 +115,8 @@ index 8198be0..5703f2b 100644
 +            if (h2g(min) == ts->info->stack_limit) {
 +                strcpy(path, "      [stack]");
 +            }
++            // NT_FILE requires the mapping to be backed by a file
++            if (access(path, F_OK) != 0) continue;
 +
 +            count++;
 +            entries = realloc(entries, sizeof(struct target_ntfile_entry)*count);
@@ -180,7 +182,7 @@ index 8198be0..5703f2b 100644
  /*
   * Constructs name of coredump file.  We have following convention
   * for the name:
-@@ -3383,7 +3491,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
+@@ -3383,7 +3493,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
      base_filename = g_path_get_basename(ts->bprm->filename);
      (void) strftime(timestamp, sizeof (timestamp), "%Y%m%d-%H%M%S",
                      localtime_r(&tv.tv_sec, &tm));
@@ -189,7 +191,7 @@ index 8198be0..5703f2b 100644
                      base_filename, timestamp, (int)getpid());
      g_free(base_filename);
  
-@@ -3487,7 +3595,7 @@ static void init_note_info(struct elf_note_info *info)
+@@ -3487,7 +3597,7 @@ static void init_note_info(struct elf_note_info *info)
  static int fill_note_info(struct elf_note_info *info,
                            long signr, const CPUArchState *env)
  {
@@ -198,7 +200,7 @@ index 8198be0..5703f2b 100644
      CPUState *cpu = env_cpu((CPUArchState *)env);
      TaskState *ts = (TaskState *)cpu->opaque;
      int i;
-@@ -3504,7 +3612,7 @@ static int fill_note_info(struct elf_note_info *info,
+@@ -3504,7 +3614,7 @@ static int fill_note_info(struct elf_note_info *info,
  
      /*
       * First fill in status (and registers) of current thread
@@ -207,7 +209,7 @@ index 8198be0..5703f2b 100644
       */
      fill_prstatus(info->prstatus, ts, signr);
      elf_core_copy_regs(&info->prstatus->pr_reg, env);
-@@ -3514,7 +3622,8 @@ static int fill_note_info(struct elf_note_info *info,
+@@ -3514,7 +3624,8 @@ static int fill_note_info(struct elf_note_info *info,
      fill_note(&info->notes[1], "CORE", NT_PRPSINFO,
                sizeof (*info->psinfo), info->psinfo);
      fill_auxv_note(&info->notes[2], ts);
