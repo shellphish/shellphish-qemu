@@ -1,8 +1,8 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index d95c484..e50d65e 100644
+index d95c484..6777c13 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -138,6 +138,17 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -138,6 +138,28 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
@@ -16,22 +16,52 @@ index d95c484..e50d65e 100644
 +    }
 +}
 +
++abi_long trace_start_addr = 0;
++static int trace_started = 0;
++void qemu_set_trace_start_addr(const char *addr_str)
++{
++    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &trace_start_addr);
++    if(ret != 1) {
++        fprintf(stderr, "Fail to parse trace_start_addr: '%s'\n", addr_str);
++        exit(1);
++    }
++}
++
 +extern int elf_core_dump(int signr, const CPUArchState *env);
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -153,6 +164,11 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
-                            itb->cs_base, itb->pc, itb->flags,
-                            lookup_symbol(itb->pc));
+@@ -146,12 +168,24 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+     int tb_exit;
+     uint8_t *tb_ptr = itb->tc.ptr;
  
+-    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+-                           "Trace %d: %p ["
+-                           TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+-                           cpu->cpu_index, itb->tc.ptr,
+-                           itb->cs_base, itb->pc, itb->flags,
+-                           lookup_symbol(itb->pc));
++    // decide whether to start tracing
++    if(unlikely(trace_start_addr != 0 && trace_started == 0)) {
++        if(unlikely(trace_start_addr >= itb->pc && trace_start_addr < itb->pc + itb->size)) trace_started = 1;
++    }
++
++    if(trace_started) {
++        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
++                               "Trace %d: %p ["
++                               TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
++                               cpu->cpu_index, itb->tc.ptr,
++                               itb->cs_base, itb->pc, itb->flags,
++                               lookup_symbol(itb->pc));
++    }
++
 +    if(unlikely(core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
 +        elf_core_dump(SIGSEGV, env);
 +        abort();
 +    }
-+
+ 
  #if defined(DEBUG_DISAS)
      if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
-         && qemu_log_in_addr_range(itb->pc)) {
 diff --git a/include/elf.h b/include/elf.h
 index 8fbfe60..79e5fbc 100644
 --- a/include/elf.h
@@ -45,15 +75,16 @@ index 8fbfe60..79e5fbc 100644
  #define NT_S390_VXRS_HIGH 0x30a         /* s390 vector registers 16-31 */
  #define NT_S390_VXRS_LOW  0x309         /* s390 vector registers 0-15 (lower half) */
 diff --git a/include/exec/log.h b/include/exec/log.h
-index fcc7b9e..ca70a47 100644
+index fcc7b9e..767c6d0 100644
 --- a/include/exec/log.h
 +++ b/include/exec/log.h
-@@ -13,6 +13,9 @@
+@@ -13,6 +13,10 @@
   *
   * Logs the output of cpu_dump_state().
   */
 +
 +void qemu_set_core_addr(const char *addr_str);
++void qemu_set_trace_start_addr(const char *addr_str);
 +
  static inline void log_cpu_state(CPUState *cpu, int flags)
  {
@@ -286,10 +317,10 @@ index 8198be0..2bcc4e0 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 22578b1..24df7d1 100644
+index 22578b1..de746bd 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -288,6 +288,16 @@ static void handle_arg_stack_size(const char *arg)
+@@ -288,6 +288,21 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -303,10 +334,15 @@ index 22578b1..24df7d1 100644
 +    qemu_set_core_addr(arg);
 +}
 +
++static void handle_arg_trace_start_addr(const char *arg)
++{
++    qemu_set_trace_start_addr(arg);
++}
++
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -424,6 +434,10 @@ static const struct qemu_argument arg_table[] = {
+@@ -424,6 +439,12 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -314,6 +350,8 @@ index 22578b1..24df7d1 100644
 +     "path",       "set coredump path prefix to 'path' (default '.')"},
 +    {"A",          "QEMU_CORE_ADDR",   true,  handle_arg_core_addr,
 +     "coreaddr",   "generate a core dump at 'coreaddr'"},
++    {"T",          "QEMU_TRACE_START_ADDR",   true,  handle_arg_trace_start_addr,
++     "tracestart", "start tracing after tracestart address"},
      {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
       "path",       "set the elf interpreter prefix to 'path'"},
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
