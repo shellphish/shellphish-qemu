@@ -1,3 +1,37 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index d95c484..e50d65e 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -138,6 +138,17 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+ #endif /* CONFIG USER ONLY */
+ 
+ /* Execute a TB, and fix up the CPU state afterwards if necessary */
++abi_long core_addr = 0;
++void qemu_set_core_addr(const char *addr_str)
++{
++    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &core_addr);
++    if(ret != 1) {
++        fprintf(stderr, "Fail to parse coreaddr: '%s'\n", addr_str);
++        exit(1);
++    }
++}
++
++extern int elf_core_dump(int signr, const CPUArchState *env);
+ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+ {
+     CPUArchState *env = cpu->env_ptr;
+@@ -153,6 +164,11 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+                            itb->cs_base, itb->pc, itb->flags,
+                            lookup_symbol(itb->pc));
+ 
++    if(unlikely(core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
++        elf_core_dump(SIGSEGV, env);
++        abort();
++    }
++
+ #if defined(DEBUG_DISAS)
+     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
+         && qemu_log_in_addr_range(itb->pc)) {
 diff --git a/include/elf.h b/include/elf.h
 index 8fbfe60..79e5fbc 100644
 --- a/include/elf.h
@@ -10,8 +44,22 @@ index 8fbfe60..79e5fbc 100644
  #define NT_S390_GS_CB   0x30b           /* s390 guarded storage registers */
  #define NT_S390_VXRS_HIGH 0x30a         /* s390 vector registers 16-31 */
  #define NT_S390_VXRS_LOW  0x309         /* s390 vector registers 0-15 (lower half) */
+diff --git a/include/exec/log.h b/include/exec/log.h
+index fcc7b9e..ca70a47 100644
+--- a/include/exec/log.h
++++ b/include/exec/log.h
+@@ -13,6 +13,9 @@
+  *
+  * Logs the output of cpu_dump_state().
+  */
++
++void qemu_set_core_addr(const char *addr_str);
++
+ static inline void log_cpu_state(CPUState *cpu, int flags)
+ {
+     QemuLogFile *logfile;
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..3921fc1 100644
+index 8198be0..2bcc4e0 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -23,6 +71,15 @@ index 8198be0..3921fc1 100644
  
  #include <sys/resource.h>
  #include <sys/shm.h>
+@@ -1659,7 +1661,7 @@ static inline void bswap_mips_abiflags(Mips_elf_abiflags_v0 *abiflags) { }
+ #endif
+ 
+ #ifdef USE_ELF_CORE_DUMP
+-static int elf_core_dump(int, const CPUArchState *);
++int elf_core_dump(int, const CPUArchState *);
+ #endif /* USE_ELF_CORE_DUMP */
+ static void load_symbols(struct elfhdr *hdr, int fd, abi_ulong load_bias);
+ 
 @@ -2999,6 +3001,13 @@ struct target_elf_prpsinfo {
      char    pr_psargs[ELF_PRARGSZ]; /* initial part of arg list */
  };
@@ -219,11 +276,20 @@ index 8198be0..3921fc1 100644
  
      info->notes_size = 0;
      for (i = 0; i < info->numnote; i++)
+@@ -3610,7 +3721,7 @@ static int write_note_info(struct elf_note_info *info, int fd)
+  * handler (provided that target process haven't registered
+  * handler for that) that does the dump when signal is received.
+  */
+-static int elf_core_dump(int signr, const CPUArchState *env)
++int elf_core_dump(int signr, const CPUArchState *env)
+ {
+     const CPUState *cpu = env_cpu((CPUArchState *)env);
+     const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 22578b1..ee5ca09 100644
+index 22578b1..24df7d1 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -288,6 +288,11 @@ static void handle_arg_stack_size(const char *arg)
+@@ -288,6 +288,16 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -232,15 +298,22 @@ index 22578b1..ee5ca09 100644
 +    qemu_set_core_dump_prefix(arg);
 +}
 +
++static void handle_arg_core_addr(const char *arg)
++{
++    qemu_set_core_addr(arg);
++}
++
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -424,6 +429,8 @@ static const struct qemu_argument arg_table[] = {
+@@ -424,6 +434,10 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
 +    {"C",          "QEMU_CORE_PREFIX", true,  handle_arg_core,
 +     "path",       "set coredump path prefix to 'path' (default '.')"},
++    {"A",          "QEMU_CORE_ADDR",   true,  handle_arg_core_addr,
++     "coreaddr",   "generate a core dump at 'coreaddr'"},
      {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
       "path",       "set the elf interpreter prefix to 'path'"},
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
@@ -257,10 +330,20 @@ index 792c742..f59c86d 100644
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
-index 8cf51ff..3322d2c 100644
+index 8cf51ff..8e3ae55 100644
 --- a/linux-user/signal.c
 +++ b/linux-user/signal.c
-@@ -627,6 +627,8 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+@@ -619,14 +619,17 @@ void force_sigsegv(int oldsig)
+ 
+ #endif
+ 
++void QEMU_NORETURN dump_core_and_abort(int target_sig);
+ /* abort execution with signal */
+-static void QEMU_NORETURN dump_core_and_abort(int target_sig)
++void QEMU_NORETURN dump_core_and_abort(int target_sig)
+ {
+     CPUState *cpu = thread_cpu;
+     CPUArchState *env = cpu->env_ptr;
      TaskState *ts = (TaskState *)cpu->opaque;
      int host_sig, core_dumped = 0;
      struct sigaction act;
@@ -269,19 +352,14 @@ index 8cf51ff..3322d2c 100644
  
      host_sig = target_to_host_signal(target_sig);
      trace_user_force_sig(env, target_sig, host_sig);
-@@ -649,6 +651,16 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+@@ -649,6 +652,11 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
              target_sig, strsignal(host_sig), "core dumped" );
      }
  
 +    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
-+    if (sizeof(target_ulong) == 4) {
-+        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
-+                 target_sig, strsignal(host_sig), "core dumped", (unsigned int)pc);
-+    }
-+    else if (sizeof(target_ulong) == 8) {
-+        qemu_log("qemu: uncaught target signal %d (%s) - %s [%016llx]\n",
-+                 target_sig, strsignal(host_sig), "core dumped", (unsigned long long)pc);
-+    }
++    qemu_log("qemu: uncaught target signal %d (%s) - %s [%0*llx]\n",
++             target_sig, strsignal(host_sig), "core dumped",
++             (int)sizeof(target_ulong)*2, (unsigned long long)pc);
 +
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
