@@ -1,8 +1,8 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index d95c484..6e97b20 100644
+index d95c484..5ffb1b0 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -138,6 +138,29 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -138,6 +138,30 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
@@ -18,7 +18,7 @@ index d95c484..6e97b20 100644
 +}
 +
 +abi_long trace_start_addr = 0;
-+static int trace_started = 0;
++static int trace_started = 1;
 +void qemu_set_trace_start_addr(const char *addr_str)
 +{
 +    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &trace_start_addr);
@@ -26,13 +26,14 @@ index d95c484..6e97b20 100644
 +        fprintf(stderr, "Fail to parse trace_start_addr: '%s'\n", addr_str);
 +        exit(1);
 +    }
++    trace_started = 0;
 +}
 +
 +extern int elf_core_dump(int signr, const CPUArchState *env);
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -146,12 +169,24 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+@@ -146,12 +170,25 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
      int tb_exit;
      uint8_t *tb_ptr = itb->tc.ptr;
  
@@ -59,6 +60,7 @@ index d95c484..6e97b20 100644
 +    if(unlikely(core_dumped == 0 && core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
 +        elf_core_dump(SIGSEGV, env);
 +        core_dumped = 1;
++        sleep(2);// sleep 2 seconds for qemu to not overwrite the previous coredump
 +    }
  
  #if defined(DEBUG_DISAS)
