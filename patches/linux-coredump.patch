@@ -1,12 +1,13 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index d95c484..6777c13 100644
+index d95c484..6e97b20 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -138,6 +138,28 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -138,6 +138,29 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
 +abi_long core_addr = 0;
++abi_long core_dumped = 0;
 +void qemu_set_core_addr(const char *addr_str)
 +{
 +    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &core_addr);
@@ -31,7 +32,7 @@ index d95c484..6777c13 100644
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -146,12 +168,24 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+@@ -146,12 +169,24 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
      int tb_exit;
      uint8_t *tb_ptr = itb->tc.ptr;
  
@@ -55,9 +56,9 @@ index d95c484..6777c13 100644
 +                               lookup_symbol(itb->pc));
 +    }
 +
-+    if(unlikely(core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
++    if(unlikely(core_dumped == 0 && core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
 +        elf_core_dump(SIGSEGV, env);
-+        abort();
++        core_dumped = 1;
 +    }
  
  #if defined(DEBUG_DISAS)
