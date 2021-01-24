@@ -217,7 +217,7 @@ index 8198be0..b1325a5 100644
 +            data_size += sizeof(abi_long)*3 + strlen(path) + 1;
 +            entry->vm_start = h2g(min);
 +            entry->vm_end = h2g(max - 1) + 1;
-+            entry->page_offset = offset;
++            entry->page_offset = offset / TARGET_PAGE_SIZE;
 +            entry->path = strdup(path);
 +        }
 +    }
