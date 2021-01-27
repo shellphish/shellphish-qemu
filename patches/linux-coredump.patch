@@ -93,7 +93,7 @@ index fcc7b9e..767c6d0 100644
  {
      QemuLogFile *logfile;
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..b1325a5 100644
+index 8198be0..a769449 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -416,3 +416,20 @@ index 8cf51ff..8e3ae55 100644
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
+diff --git a/target/mips/translate.c b/target/mips/translate.c
+index 25b595a..f9db3cd 100644
+--- a/target/mips/translate.c
++++ b/target/mips/translate.c
+@@ -30942,9 +30942,9 @@ static void mips_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
+         (ctx->hflags & MIPS_HFLAG_BMASK) == 0) {
+         ctx->base.is_jmp = DISAS_TOO_MANY;
+     }
+-    if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
+-        ctx->base.is_jmp = DISAS_TOO_MANY;
+-    }
++//    if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
++//        ctx->base.is_jmp = DISAS_TOO_MANY;
++//    }
+ }
+ 
+ static void mips_tr_tb_stop(DisasContextBase *dcbase, CPUState *cs)
