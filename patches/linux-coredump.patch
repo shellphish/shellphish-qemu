@@ -93,7 +93,7 @@ index fcc7b9e..767c6d0 100644
  {
      QemuLogFile *logfile;
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index 8198be0..a769449 100644
+index 8198be0..ff764ab 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -128,43 +128,6 @@ index 8198be0..a769449 100644
  /* Here is the structure in which status of each thread is captured. */
  struct elf_thread_status {
      QTAILQ_ENTRY(elf_thread_status)  ets_link;
-@@ -3193,21 +3202,21 @@ static abi_ulong vma_dump_size(const struct vm_area_struct *vma)
-      * and check whether it contains elf header.  If there is
-      * no elf header, we dump it.
-      */
--    if (vma->vma_flags & PROT_EXEC) {
--        char page[TARGET_PAGE_SIZE];
--
--        copy_from_user(page, vma->vma_start, sizeof (page));
--        if ((page[EI_MAG0] == ELFMAG0) &&
--            (page[EI_MAG1] == ELFMAG1) &&
--            (page[EI_MAG2] == ELFMAG2) &&
--            (page[EI_MAG3] == ELFMAG3)) {
--            /*
--             * Mappings are possibly from ELF binary.  Don't dump
--             * them.
--             */
--            return (0);
--        }
--    }
-+    // if (vma->vma_flags & PROT_EXEC) {
-+    //     char page[TARGET_PAGE_SIZE];
-+
-+    //     copy_from_user(page, vma->vma_start, sizeof (page));
-+    //     if ((page[EI_MAG0] == ELFMAG0) &&
-+    //         (page[EI_MAG1] == ELFMAG1) &&
-+    //         (page[EI_MAG2] == ELFMAG2) &&
-+    //         (page[EI_MAG3] == ELFMAG3)) {
-+    //         /*
-+    //          * Mappings are possibly from ELF binary.  Don't dump
-+    //          * them.
-+    //          */
-+    //         return (0);
-+    //     }
-+    // }
- 
-     return (vma->vma_end - vma->vma_start);
- }
 @@ -3357,6 +3366,118 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
      }
  }
