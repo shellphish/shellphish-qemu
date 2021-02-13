@@ -1,29 +1,31 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index d95c484..5ffb1b0 100644
+index d95c484..fe3c26b 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -138,6 +138,30 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -138,6 +138,32 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
 +abi_long core_addr = 0;
++abi_long nth_core_addr_occurrence = 0;
 +abi_long core_dumped = 0;
 +void qemu_set_core_addr(const char *addr_str)
 +{
-+    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &core_addr);
-+    if(ret != 1) {
-+        fprintf(stderr, "Fail to parse coreaddr: '%s'\n", addr_str);
++    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx ":" TARGET_FMT_lu, &core_addr, &nth_core_addr_occurrence);
++    if(ret != 2) {
++        fprintf(stderr, "Fail to parse coreaddr: '%s', expected {addr:x}:{nth_occurence}\n", addr_str);
 +        exit(1);
 +    }
 +}
 +
 +abi_long trace_start_addr = 0;
++abi_long nth_start_trace_addr_occurrence = 0;
 +static int trace_started = 1;
 +void qemu_set_trace_start_addr(const char *addr_str)
 +{
-+    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx, &trace_start_addr);
-+    if(ret != 1) {
-+        fprintf(stderr, "Fail to parse trace_start_addr: '%s'\n", addr_str);
++    int ret = sscanf(addr_str, "0x" TARGET_FMT_lx ":" TARGET_FMT_lu, &trace_start_addr, &nth_start_trace_addr_occurrence);
++    if(ret != 2) {
++        fprintf(stderr, "Fail to parse trace_start_addr: '%s', expected {addr:x}:{nth_occurence}\n", addr_str);
 +        exit(1);
 +    }
 +    trace_started = 0;
@@ -33,7 +35,7 @@ index d95c484..5ffb1b0 100644
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -146,12 +170,25 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+@@ -146,12 +172,40 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
      int tb_exit;
      uint8_t *tb_ptr = itb->tc.ptr;
  
@@ -45,7 +47,16 @@ index d95c484..5ffb1b0 100644
 -                           lookup_symbol(itb->pc));
 +    // decide whether to start tracing
 +    if(unlikely(trace_start_addr != 0 && trace_started == 0)) {
-+        if(unlikely(trace_start_addr >= itb->pc && trace_start_addr < itb->pc + itb->size)) trace_started = 1;
++        if(unlikely(trace_start_addr >= itb->pc && trace_start_addr < itb->pc + itb->size))
++        {
++            if (nth_start_trace_addr_occurrence) {
++                nth_start_trace_addr_occurrence -= 1;
++            }
++            if (!nth_start_trace_addr_occurrence)
++            {
++                trace_started = 1;
++            }
++        }
 +    }
 +
 +    if(trace_started) {
@@ -58,9 +69,15 @@ index d95c484..5ffb1b0 100644
 +    }
 +
 +    if(unlikely(core_dumped == 0 && core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
-+        elf_core_dump(SIGSEGV, env);
-+        core_dumped = 1;
-+        sleep(2);// sleep 2 seconds for qemu to not overwrite the previous coredump
++        if (nth_core_addr_occurrence) {
++            nth_core_addr_occurrence -= 1;
++        }
++        if (!nth_core_addr_occurrence)
++        {
++            elf_core_dump(SIGSEGV, env);
++            core_dumped = 1;
++            sleep(2);// sleep 2 seconds for qemu to not overwrite the previous coredump
++        }
 +    }
  
  #if defined(DEBUG_DISAS)
@@ -294,7 +311,7 @@ index 8198be0..ff764ab 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 22578b1..de746bd 100644
+index 22578b1..9dd5170 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
 @@ -288,6 +288,21 @@ static void handle_arg_stack_size(const char *arg)
@@ -326,7 +343,7 @@ index 22578b1..de746bd 100644
 +    {"C",          "QEMU_CORE_PREFIX", true,  handle_arg_core,
 +     "path",       "set coredump path prefix to 'path' (default '.')"},
 +    {"A",          "QEMU_CORE_ADDR",   true,  handle_arg_core_addr,
-+     "coreaddr",   "generate a core dump at 'coreaddr'"},
++     "coreaddr",   "generate a core dump at 'coreaddr':'num_occurence' (ex. -A 0x400848:3 => the 3rd occurrence of 0x400848)"},
 +    {"T",          "QEMU_TRACE_START_ADDR",   true,  handle_arg_trace_start_addr,
 +     "tracestart", "start tracing after tracestart address"},
      {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
