@@ -1,5 +1,5 @@
 diff --git a/linux-user/elfload.c b/linux-user/elfload.c
-index a8bc667..f4d8b73 100644
+index a8bc667..410b275 100644
 --- a/linux-user/elfload.c
 +++ b/linux-user/elfload.c
 @@ -1,6 +1,8 @@
@@ -11,7 +11,21 @@ index a8bc667..f4d8b73 100644
  
  #include <stdio.h>
  #include <sys/types.h>
-@@ -1384,6 +1386,19 @@ static int fill_psinfo(struct target_elf_prpsinfo *psinfo, const TaskState *ts)
+@@ -45,13 +47,8 @@ typedef abi_ulong       target_elf_greg_t;
+ #define tswapreg(ptr)   tswapal(ptr)
+ #endif
+ 
+-#ifdef USE_UID16
+ typedef abi_ushort      target_uid_t;
+ typedef abi_ushort      target_gid_t;
+-#else
+-typedef abi_uint        target_uid_t;
+-typedef abi_uint        target_gid_t;
+-#endif
+ typedef abi_int         target_pid_t;
+ 
+ unsigned long cgc_stack_top;
+@@ -1384,6 +1381,19 @@ static int fill_psinfo(struct target_elf_prpsinfo *psinfo, const TaskState *ts)
      return (0);
  }
  
@@ -31,7 +45,7 @@ index a8bc667..f4d8b73 100644
  /*
   * Constructs name of coredump file.  We have following convention
   * for the name:
-@@ -1412,7 +1427,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
+@@ -1412,7 +1422,7 @@ static int core_dump_filename(const TaskState *ts, char *buf,
      base_filename = strdup(basename(filename));
      (void) strftime(timestamp, sizeof (timestamp), "%Y%m%d-%H%M%S",
                      localtime_r(&tv.tv_sec, &tm));
