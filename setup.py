@@ -205,7 +205,7 @@ class develop(_develop):
 
 setup(
     name='shellphish-qemu',
-    version='0.10.1',
+    version='0.10.2',
     description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     provides=['shellphish_qemu'],
