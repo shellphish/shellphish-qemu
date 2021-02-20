@@ -76,7 +76,7 @@ def _clone_linux_qemu():
     # grab the linux tarball
     if not os.path.exists(QEMU_REPO_PATH_LINUX):
         TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
-        if subprocess.call(['git', 'clone', '--branch', 'v5.0.0-rc1', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
+        if subprocess.call(['git', 'clone', '--branch', 'v5.2.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
             raise LibError("Unable to apply tracer patch to qemu")
@@ -132,25 +132,25 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
     print("Configuring Linux qemu...")
-    if subprocess.call("./configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3`", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
+    if subprocess.call("mkdir -p build; cd build; ../configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3`", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
     print("Building Linux qemu...")
-    if subprocess.call(['make', '-j4'], cwd=QEMU_REPO_PATH_LINUX) != 0:
+    if subprocess.call(['make', '-j4'], cwd=os.path.join(QEMU_REPO_PATH_LINUX, "build")) != 0:
         raise LibError("Unable to build shellphish-qemu-linux")
 
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "i386-linux-user", "qemu-i386"), QEMU_PATH_LINUX_I386)
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "x86_64-linux-user", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-i386"), QEMU_PATH_LINUX_I386)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-x86_64"), QEMU_PATH_LINUX_X86_64)
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mipsel-linux-user", "qemu-mipsel"), QEMU_PATH_LINUX_MIPSEL)
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips-linux-user", "qemu-mips"), QEMU_PATH_LINUX_MIPS)
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "mips64-linux-user", "qemu-mips64"), QEMU_PATH_LINUX_MIPS64)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-mipsel"), QEMU_PATH_LINUX_MIPSEL)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-mips"), QEMU_PATH_LINUX_MIPS)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-mips64"), QEMU_PATH_LINUX_MIPS64)
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc-linux-user", "qemu-ppc"), QEMU_PATH_LINUX_PPC)
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "ppc64-linux-user", "qemu-ppc64"), QEMU_PATH_LINUX_PPC64)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-ppc"), QEMU_PATH_LINUX_PPC)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-ppc64"), QEMU_PATH_LINUX_PPC64)
 
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "arm-linux-user", "qemu-arm"), QEMU_PATH_LINUX_ARM)
-    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "aarch64-linux-user", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-arm"), QEMU_PATH_LINUX_ARM)
+    shutil.copyfile(os.path.join(QEMU_REPO_PATH_LINUX, "build", "qemu-aarch64"), QEMU_PATH_LINUX_AARCH64)
 
     os.chmod(QEMU_PATH_CGC_BASE, 0o755)
     os.chmod(QEMU_PATH_CGC_TRACER, 0o755)
