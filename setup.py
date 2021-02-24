@@ -78,8 +78,8 @@ def _clone_linux_qemu():
         TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
         if subprocess.call(['git', 'clone', '--branch', 'v5.2.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
-            raise LibError("Unable to apply tracer patch to qemu")
+        #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
+        #    raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply coredump update patch to qemu-linux")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_CGC_BASE, 'apply', QEMU_CGC_COREDUMP_PATCH]) != 0:
