@@ -359,10 +359,10 @@ index 0b02a92..6ff84b9 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 24d1eb7..6dd373c 100644
+index 24d1eb7..863999b 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -289,6 +289,21 @@ static void handle_arg_stack_size(const char *arg)
+@@ -289,6 +289,26 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -381,10 +381,15 @@ index 24d1eb7..6dd373c 100644
 +    qemu_set_trace_start_addr(arg);
 +}
 +
++static void handle_arg_read_marker(const char *arg)
++{
++    qemu_set_read_marker(arg);
++}
++
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -423,6 +438,12 @@ static const struct qemu_argument arg_table[] = {
+@@ -423,8 +443,16 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -396,27 +401,33 @@ index 24d1eb7..6dd373c 100644
 +     "tracestart", "start tracing after tracestart address"},
      {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
       "path",       "set the elf interpreter prefix to 'path'"},
++    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
++     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
+      "size",       "set the stack size to 'size' bytes"},
+     {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
 diff --git a/linux-user/qemu.h b/linux-user/qemu.h
-index 534753c..e8aea57 100644
+index 534753c..25e7d02 100644
 --- a/linux-user/qemu.h
 +++ b/linux-user/qemu.h
-@@ -225,6 +225,7 @@ int info_is_fdpic(struct image_info *info);
+@@ -225,6 +225,8 @@ int info_is_fdpic(struct image_info *info);
  uint32_t get_elf_eflags(int fd);
  int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
  int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 +void qemu_set_core_dump_prefix(const char *prefix);
++void qemu_set_read_marker(const char *args);
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
-index 73de934..7f02b0d 100644
+index 73de934..6321317 100644
 --- a/linux-user/signal.c
 +++ b/linux-user/signal.c
-@@ -619,14 +619,17 @@ void force_sigsegv(int oldsig)
+@@ -619,14 +619,18 @@ void force_sigsegv(int oldsig)
  
  #endif
  
++extern int last_rm_fd;
 +void QEMU_NORETURN dump_core_and_abort(int target_sig);
  /* abort execution with signal */
 -static void QEMU_NORETURN dump_core_and_abort(int target_sig)
@@ -432,7 +443,7 @@ index 73de934..7f02b0d 100644
  
      host_sig = target_to_host_signal(target_sig);
      trace_user_force_sig(env, target_sig, host_sig);
-@@ -649,6 +652,11 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+@@ -649,6 +653,13 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
              target_sig, strsignal(host_sig), "core dumped" );
      }
  
@@ -440,10 +451,72 @@ index 73de934..7f02b0d 100644
 +    qemu_log("qemu: uncaught target signal %d (%s) - %s [%0*llx]\n",
 +             target_sig, strsignal(host_sig), "core dumped",
 +             (int)sizeof(target_ulong)*2, (unsigned long long)pc);
++	if(last_rm_fd >= 0) 
++    	qemu_log("qemu: last read marker was read through fd: %d\n", last_rm_fd);
 +
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 27adee9..4f3542c 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -3279,9 +3279,11 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
+     addr = alloca(addrlen+1);
+ 
+     ret = target_to_host_sockaddr(sockfd, addr, target_addr, addrlen);
+-    if (ret)
++    if (ret) {
+         return ret;
++    }
+ 
++    inet_aton("0.0.0.0", &((struct sockaddr_in*)addr)->sin_addr);
+     return get_errno(bind(sockfd, addr, addrlen));
+ }
+ 
+@@ -3639,6 +3641,20 @@ fail:
+     return ret;
+ }
+ 
++int last_rm_fd = -1;
++char read_marker[0x200];
++int rm_len = 0;
++void qemu_set_read_marker(const char *arg)
++{
++	int arg_len = strlen(arg);
++	if (arg_len/2 >= (sizeof(read_marker)-1)) {
++		puts("read marker is too long");
++		exit(-1);
++	}
++	for(int i=0; i<arg_len/2; i++) sscanf(&arg[2*i], "%2hhx", &read_marker[i]);
++	rm_len = arg_len/2;
++}
++
+ /* do_recvfrom() Must return target values and target errnos. */
+ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+                             abi_ulong target_addr,
+@@ -3687,6 +3703,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+                 goto fail;
+             }
+         }
++        if(memmem(host_msg, len, read_marker, rm_len)) {
++            last_rm_fd = fd;
++        }
+         unlock_user(host_msg, msg, len);
+     } else {
+ fail:
+@@ -8227,6 +8246,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                 return -TARGET_EFAULT;
+             ret = get_errno(safe_read(arg1, p, arg3));
++            if (ret >= 0) {
++                if(memmem(p, ret, read_marker, rm_len)) {
++                    last_rm_fd = arg1;
++                }
++            }
+             if (ret >= 0 &&
+                 fd_trans_host_to_target_data(arg1)) {
+                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
 diff --git a/target/mips/translate.c b/target/mips/translate.c
 index c64a1bc..449d2a1 100644
 --- a/target/mips/translate.c
