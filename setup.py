@@ -19,6 +19,9 @@ QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_DOUBLE_READ_PATCH = os.path.join("..", "patches", "exit-double-read.patch")
 QEMU_LINUX_COREDUMP_PATCH = os.path.join("..", "patches", "linux-coredump.patch")
 QEMU_CGC_COREDUMP_PATCH = os.path.join("..", "patches", "cgc-coredump.patch")
+QEMU_LINUX_CMSG_PKTINFO_PATCH = os.path.join("..", "patches", "linux-syscall-cmsg-pktinfo.patch")
+QEMU_LINUX_IPV6_AM_PATCH = os.path.join("..", "patches", "linux-syscall-dummy-ipv6_add_membership.patch")
+QEMU_LINUX_MORE_IPV6_OPTNAMES_PATCH = os.path.join("..", "patches", "linux-syscall-more-ipv6-optnames.patch")
 
 QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
 QEMU_PATH_CGC_NXTRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-nxtracer")
@@ -82,6 +85,12 @@ def _clone_linux_qemu():
         #    raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply coredump update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_CMSG_PKTINFO_PATCH]) != 0:
+            raise LibError("Unable to apply Linux syscall cmsg PKTINFO patch to qemu-linux-base")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_IPV6_AM_PATCH]) != 0:
+            raise LibError("Unable to apply Linux syscall dummy IPV6_ADD_MEMBERSHIP patch to qemu-linux-base")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_MORE_IPV6_OPTNAMES_PATCH]) != 0:
+            raise LibError("Unable to apply Linux syscall more IPv6 optnames patch to qemu-linux-base")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_CGC_BASE, 'apply', QEMU_CGC_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply coredump update patch to qemu-cgc-base")
 

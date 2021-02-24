@@ -1,0 +1,57 @@
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 96cd4bf86d..1d9d9285c2 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -1701,6 +1701,26 @@ static inline abi_long host_to_target_cmsg(struct target_msghdr *target_msgh,
+                     (void *) &errh->offender, sizeof(errh->offender));
+                 break;
+             }
++            case IP_PKTINFO:
++            {
++                struct pktinfo_t {
++                    int ipi_ifindex;
++                    struct in_addr ipi_spec_dst;
++                    struct in_addr ipi_addr;
++                };
++                struct pktinfo_t *pktinfo = (struct pktinfo_t *)data;
++                struct pktinfo_t *target_pktinfo = (struct pktinfo_t *)target_data;
++
++                if (len != sizeof(struct pktinfo_t) ||
++                    tgt_len != sizeof(struct pktinfo_t)) {
++                    goto unimplemented;
++                }
++
++                target_pktinfo->ipi_ifindex = pktinfo->ipi_ifindex;
++                target_pktinfo->ipi_spec_dst = pktinfo->ipi_spec_dst;
++                target_pktinfo->ipi_addr = pktinfo->ipi_addr;
++                break;
++            }
+             default:
+                 goto unimplemented;
+             }
+@@ -1745,6 +1765,25 @@ static inline abi_long host_to_target_cmsg(struct target_msghdr *target_msgh,
+                     (void *) &errh->offender, sizeof(errh->offender));
+                 break;
+             }
++            case IPV6_PKTINFO:
++            {
++                struct in6_pktinfo_t {
++                    struct in6_addr ipi6_addr;
++                    int             ipi6_ifindex;
++                };
++                struct in6_pktinfo_t *pktinfo = (struct in6_pktinfo_t *)data;
++                struct in6_pktinfo_t *target_pktinfo = (struct in6_pktinfo_t *)target_data;
++
++                if (len != sizeof(struct in6_pktinfo_t) ||
++                        tgt_len != sizeof(struct in6_pktinfo_t)) {
++                    printf("Inconsistent lengths: %d %d %ld.\n", len, tgt_len, sizeof(struct in6_pktinfo_t));
++                    goto unimplemented;
++                }
++
++                target_pktinfo->ipi6_addr = pktinfo->ipi6_addr;
++                target_pktinfo->ipi6_ifindex = pktinfo->ipi6_ifindex;
++                break;
++            }
+             default:
+                 goto unimplemented;
+             }

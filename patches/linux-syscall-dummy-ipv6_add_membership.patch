@@ -1,0 +1,16 @@
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 619cae7bf8..12399dd046 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -1944,6 +1944,11 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
+                                        &pki, sizeof(pki)));
+             break;
+         }
++        case IPV6_ADD_MEMBERSHIP:
++        {
++            ret = 0;
++            break;
++        }
+         default:
+             goto unimplemented;
+         }
