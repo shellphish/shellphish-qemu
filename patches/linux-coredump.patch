@@ -420,7 +420,7 @@ index 534753c..25e7d02 100644
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
-index 73de934..6321317 100644
+index 73de934..57fa7a6 100644
 --- a/linux-user/signal.c
 +++ b/linux-user/signal.c
 @@ -619,14 +619,18 @@ void force_sigsegv(int oldsig)
@@ -443,16 +443,20 @@ index 73de934..6321317 100644
  
      host_sig = target_to_host_signal(target_sig);
      trace_user_force_sig(env, target_sig, host_sig);
-@@ -649,6 +653,13 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
-             target_sig, strsignal(host_sig), "core dumped" );
+@@ -645,10 +649,15 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+         getrlimit(RLIMIT_CORE, &nodump);
+         nodump.rlim_cur=0;
+         setrlimit(RLIMIT_CORE, &nodump);
+-        (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s\n",
+-            target_sig, strsignal(host_sig), "core dumped" );
      }
  
++    qemu_log("qemu: last read marker was read through fd: [%d]\n", last_rm_fd);
++
 +    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 +    qemu_log("qemu: uncaught target signal %d (%s) - %s [%0*llx]\n",
 +             target_sig, strsignal(host_sig), "core dumped",
 +             (int)sizeof(target_ulong)*2, (unsigned long long)pc);
-+	if(last_rm_fd >= 0) 
-+    	qemu_log("qemu: last read marker was read through fd: %d\n", last_rm_fd);
 +
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
