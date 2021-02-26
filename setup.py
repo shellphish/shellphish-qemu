@@ -211,6 +211,7 @@ setup(
     provides=['shellphish_qemu'],
     python_requires='>=3.6',
     requires=['pkg_resources'],
+    install_requires=['ninja'],
     cmdclass={'build': build, 'develop': develop},
     zip_safe=True,
     include_package_data=True,
