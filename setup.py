@@ -34,6 +34,10 @@ QEMU_PATH_LINUX_PPC64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-ppc64")
 QEMU_PATH_LINUX_ARM = os.path.join(BIN_PATH, "shellphish-qemu-linux-arm")
 QEMU_PATH_LINUX_AARCH64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-aarch64")
 
+TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
+TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
+
+
 ALL_QEMU_BINS = [
     QEMU_PATH_CGC_BASE,
     QEMU_PATH_CGC_TRACER,
@@ -51,31 +55,13 @@ ALL_QEMU_BINS = [
 
 def _clone_cgc_qemu():
     # grab the CGC repo
-    if not os.path.exists(QEMU_REPO_PATH_CGC_BASE) \
-            or not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
-        TRACER_QEMU_REPO_CGC = "https://github.com/mechaphish/qemu-cgc"
-        # since we're cloning from gitlab we'll need to try a couple times, since gitlab
-        # has a cap on the number of ssh workers
-        retrieved = False
-
-        for _ in range(10):
-            if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) == 0:
-                retrieved = True
-                break
-            else:
-                time.sleep(random.randint(0, 10))
-
-        if not retrieved:
+    if not os.path.exists(QEMU_REPO_PATH_CGC_BASE):
+        if subprocess.call(['git', 'clone', '--branch', 'base_cgc', '--depth=1', TRACER_QEMU_REPO_CGC, QEMU_REPO_PATH_CGC_BASE]) != 0:
             raise LibError("Unable to retrieve tracer qemu")
-
-    # update tracer qemu for cgc
-    if subprocess.call(['git', 'pull'], cwd=QEMU_REPO_PATH_CGC_BASE) != 0:
-        raise LibError("Unable to retrieve cgc base qemu")
 
 def _clone_linux_qemu():
     # grab the linux tarball
     if not os.path.exists(QEMU_REPO_PATH_LINUX):
-        TRACER_QEMU_REPO_LINUX = "https://github.com/qemu/qemu.git"
         if subprocess.call(['git', 'clone', '--branch', 'v5.2.0', '--depth=1', TRACER_QEMU_REPO_LINUX, QEMU_REPO_PATH_LINUX]) != 0:
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
@@ -132,7 +118,7 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
     print("Configuring Linux qemu...")
-    if subprocess.call("mkdir -p build; cd build; ../configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3`", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
+    if subprocess.call("mkdir -p build; cd build; ../configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3` --static", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
     print("Building Linux qemu...")
     if subprocess.call(['make', '-j4'], cwd=os.path.join(QEMU_REPO_PATH_LINUX, "build")) != 0:
@@ -205,7 +191,7 @@ class develop(_develop):
 
 setup(
     name='shellphish-qemu',
-    version='0.11.0',
+    version='0.12.0',
     description="A pip-installable set of qemus.",
     packages=['shellphish_qemu'],
     provides=['shellphish_qemu'],
