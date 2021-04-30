@@ -4,7 +4,7 @@ set -ex
 checkout_dir=$(realpath $(dirname $0))
 
 docker build -t shellphish_qemu_build_image -f - $checkout_dir << EOF
-FROM ubuntu:focal
+FROM ubuntu:focal # This is OK because all binaries are static
 
 ENV DEBIAN_FRONTEND="noninteractive"
 
