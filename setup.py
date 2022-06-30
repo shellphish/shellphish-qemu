@@ -118,7 +118,10 @@ def _build_qemus():
     shutil.copyfile(os.path.join(QEMU_REPO_PATH_CGC_BASE, "i386-linux-user", "qemu-i386"), QEMU_PATH_CGC_BASE)
 
     print("Configuring Linux qemu...")
-    if subprocess.call("mkdir -p build; cd build; ../configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3` --static --disable-debug-info", shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
+    config_cmd = "mkdir -p build; cd build; ../configure --target-list=i386-linux-user,x86_64-linux-user,mips-linux-user,mips64-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,arm-linux-user,aarch64-linux-user --disable-werror --python=`which python3` --static --disable-debug-info"
+    if os.getenv('HACKBIND') is not None:
+        config_cmd += " --extra-cflags=\'-DHACKBIND\' "
+    if subprocess.call(config_cmd, shell=True, cwd=QEMU_REPO_PATH_LINUX) != 0:
         raise LibError("Unable to configure shellphish-qemu-linux")
     print("Building Linux qemu...")
     if subprocess.call(['make', '-j4'], cwd=os.path.join(QEMU_REPO_PATH_LINUX, "build")) != 0:
