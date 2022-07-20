@@ -377,10 +377,10 @@ index 0b02a92..7cb872f 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 24d1eb7..2befcc8 100644
+index 24d1eb7..e2c8f6e 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -289,6 +289,38 @@ static void handle_arg_stack_size(const char *arg)
+@@ -289,6 +289,43 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -404,12 +404,17 @@ index 24d1eb7..2befcc8 100644
 +    qemu_set_read_marker(arg);
 +}
 +
++#ifdef GREENHOUSE
 +static void handle_arg_execve(const char *arg)
 +{
 +    qemu_set_execve_path(arg);
 +}
 +
-+#ifdef HACKBIND
++static void handle_arg_hackproc(const char *arg)
++{
++    qemu_set_hackproc(arg);
++}
++
 +static void handle_arg_hackbind(const char *arg)
 +{
 +    qemu_set_hackbind(arg);
@@ -419,7 +424,7 @@ index 24d1eb7..2befcc8 100644
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -423,8 +455,22 @@ static const struct qemu_argument arg_table[] = {
+@@ -423,8 +460,24 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -433,17 +438,19 @@ index 24d1eb7..2befcc8 100644
       "path",       "set the elf interpreter prefix to 'path'"},
 +    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
 +     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +    {"hackbind",   "QEMU_HACKBIND",    false,   handle_arg_hackbind,
 +     "",           "use hack to get around ipv6 addrs and conflicting binds"},
-+#endif
++    {"hackproc",   "QEMU_HACKPROC",    false,   handle_arg_hackproc,
++     "",           "use hack to get around needing to mount a writable /proc"},
 +    {"execve",     "QEMU_EXECVE",      true,   handle_arg_execve,
 +     "path",       "use interpreter at 'path' when a process calls execve()"},
++#endif
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
       "size",       "set the stack size to 'size' bytes"},
      {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
 diff --git a/linux-user/qemu.h b/linux-user/qemu.h
-index 534753c..d215c84 100644
+index 534753c..03a24c0 100644
 --- a/linux-user/qemu.h
 +++ b/linux-user/qemu.h
 @@ -225,6 +225,8 @@ int info_is_fdpic(struct image_info *info);
@@ -455,14 +462,15 @@ index 534753c..d215c84 100644
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
-@@ -402,6 +404,10 @@ extern long safe_syscall_base(int *pending, long number, ...);
+@@ -402,6 +404,11 @@ extern long safe_syscall_base(int *pending, long number, ...);
  
  /* syscall.c */
  int host_to_target_waitstatus(int status);
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +void qemu_set_hackbind(const char *arg);
-+#endif
++void qemu_set_hackproc(const char *arg);
 +void qemu_set_execve_path(const char *path);
++#endif
  
  /* strace.c */
  void print_syscall(void *cpu_env, int num,
@@ -509,52 +517,58 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..96e5e20 100644
+index 27adee9..59b6e40 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
-@@ -130,10 +130,18 @@
+@@ -130,10 +130,20 @@
  #include "fd-trans.h"
  #include "tcg/tcg.h"
  
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +int used_ports[512] = {0};
 +int ports_index = 0;
 +bool hackbind = false;
++bool hackproc = false;
++char *qemu_execve_path;
 +#endif
++
  #ifndef CLONE_IO
  #define CLONE_IO                0x80000000      /* Clone io context */
  #endif
  
 +#define BINPRM_BUF_SIZE 128
-+char *qemu_execve_path;
 +
  /* We can't directly call the host clone syscall, because this will
   * badly confuse libc (breaking mutexes, for example). So we must
   * divide clone flags into:
-@@ -864,6 +872,18 @@ static abi_ulong target_brk;
+@@ -864,6 +874,22 @@ static abi_ulong target_brk;
  static abi_ulong target_original_brk;
  static abi_ulong brk_page;
  
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +void qemu_set_hackbind(const char *arg) {
 +    hackbind = true;
 +}
-+#endif
++
++void qemu_set_hackproc(const char *arg) {
++    hackproc = true;
++}
 +
 +void qemu_set_execve_path(const char *path)
 +{
 +    qemu_execve_path = strdup(path);
 +}
++#endif
 +
 +
  void target_set_brk(abi_ulong new_brk)
  {
      target_original_brk = target_brk = HOST_PAGE_ALIGN(new_brk);
-@@ -3231,6 +3251,13 @@ static abi_long do_socket(int domain, int type, int protocol)
+@@ -3231,6 +3257,13 @@ static abi_long do_socket(int domain, int type, int protocol)
          return -TARGET_EPROTONOSUPPORT;
      }
  
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +    if (hackbind && domain == AF_INET6) {
 +        // handle all ipv6 networking as ipv4
 +        domain = AF_INET;
@@ -564,11 +578,11 @@ index 27adee9..96e5e20 100644
      if (domain == AF_PACKET ||
          (domain == AF_INET && type == SOCK_PACKET)) {
          protocol = tswap16(protocol);
-@@ -3271,6 +3298,12 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
+@@ -3271,6 +3304,12 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
  {
      void *addr;
      abi_long ret;
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +    char ip[INET6_ADDRSTRLEN+1] = "";
 +    unsigned short port = 0, newport = 0;
 +    unsigned short reuse = 0, retries = 0;
@@ -577,11 +591,11 @@ index 27adee9..96e5e20 100644
  
      if ((int)addrlen < 0) {
          return -TARGET_EINVAL;
-@@ -3282,7 +3315,75 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
+@@ -3282,7 +3321,75 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
      if (ret)
          return ret;
  
-+#ifdef HACKBIND
++#ifdef GREENHOUSE
 +    if (hackbind) {
 +        if(((struct sockaddr*)addr)->sa_family == AF_INET) {
 +            inet_ntop(AF_INET, &((struct sockaddr_in*)addr)->sin_addr, ip, sizeof(ip));
@@ -653,7 +667,7 @@ index 27adee9..96e5e20 100644
  }
  
  /* do_connect() Must return target values and target errnos. */
-@@ -3639,6 +3740,20 @@ fail:
+@@ -3639,6 +3746,20 @@ fail:
      return ret;
  }
  
@@ -674,7 +688,7 @@ index 27adee9..96e5e20 100644
  /* do_recvfrom() Must return target values and target errnos. */
  static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
                              abi_ulong target_addr,
-@@ -3687,6 +3802,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+@@ -3687,6 +3808,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
                  goto fail;
              }
          }
@@ -684,11 +698,29 @@ index 27adee9..96e5e20 100644
          unlock_user(host_msg, msg, len);
      } else {
  fail:
-@@ -8155,6 +8273,149 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
+@@ -8025,6 +8149,17 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
+ #endif
+         { NULL, NULL, NULL }
+     };
++#ifdef GREENHOUSE
++    char redirected_procpath[strlen(pathname)+2+1]; // extra gh characters
++
++    if (hackproc) {
++        if (strncmp(pathname, "/proc/", 6) == 0) {
++            snprintf(redirected_procpath, strlen(pathname)+2, "/ghproc/%s", pathname+6);
++            fprintf(stderr, "[qemu] changing %s to %s\n", pathname, redirected_procpath);
++            pathname = redirected_procpath;
++        }
++    }
++#endif
+ 
+     if (is_proc_myself(pathname, "exe")) {
+         int execfd = qemu_getauxval(AT_EXECFD);
+@@ -8155,6 +8290,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
      return 0;
  }
  
-+
++#ifdef GREENHOUSE
 +/* qemu_execve() Must return target values and target errnos. */
 +static abi_long qemu_execve(char *filename, char *argv[],
 +                  char *envp[])
@@ -830,11 +862,12 @@ index 27adee9..96e5e20 100644
 +
 +    return get_errno(execve(qemu_path, new_argp, envp));
 +}
++#endif
 +
  /* This is an internal helper for do_syscall so that it is easier
   * to have a single return point, so that actions, such as logging
   * of syscall results, can be performed.
-@@ -8227,6 +8488,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8227,6 +8506,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
              if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
                  return -TARGET_EFAULT;
              ret = get_errno(safe_read(arg1, p, arg3));
@@ -846,18 +879,21 @@ index 27adee9..96e5e20 100644
              if (ret >= 0 &&
                  fd_trans_host_to_target_data(arg1)) {
                  ret = fd_trans_host_to_target_data(arg1)(p, ret);
-@@ -8447,7 +8713,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8447,7 +8731,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
               * before the execve completes and makes it the other
               * program's problem.
               */
--            ret = get_errno(safe_execve(p, argp, envp));
 +            // ret = get_errno(safe_execve(p, argp, envp));
++#ifdef GREENHOUSE
 +            if (qemu_execve_path && *qemu_execve_path) {
 +                ret = get_errno(qemu_execve(p, argp, envp));
 +            }
 +            else {
 +                ret = get_errno(safe_execve(p, argp, envp));
-+            }   
++            }
++#else
+             ret = get_errno(safe_execve(p, argp, envp));
++#endif
              unlock_user(p, arg1, 0);
  
              goto execve_end;
