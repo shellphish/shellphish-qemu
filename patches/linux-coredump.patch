@@ -517,7 +517,7 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..10d0e01 100644
+index 27adee9..59b6e40 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
 @@ -130,10 +130,20 @@
@@ -707,7 +707,7 @@ index 27adee9..10d0e01 100644
 +
 +    if (hackproc) {
 +        if (strncmp(pathname, "/proc/", 6) == 0) {
-+            snprintf(redirected_procpath, strlen(pathname)+2+1, "/ghproc/%s", pathname+6);
++            snprintf(redirected_procpath, strlen(pathname)+2, "/ghproc/%s", pathname+6);
 +            fprintf(stderr, "[qemu] changing %s to %s\n", pathname, redirected_procpath);
 +            pathname = redirected_procpath;
 +        }
