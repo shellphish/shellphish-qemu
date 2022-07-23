@@ -517,7 +517,7 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..59b6e40 100644
+index 27adee9..b9aff15 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
 @@ -130,10 +130,20 @@
@@ -698,17 +698,19 @@ index 27adee9..59b6e40 100644
          unlock_user(host_msg, msg, len);
      } else {
  fail:
-@@ -8025,6 +8149,17 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
+@@ -8025,6 +8149,19 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
  #endif
          { NULL, NULL, NULL }
      };
 +#ifdef GREENHOUSE
++    int MAXPROCBUF = strlen(pathname)+1;
 +    char redirected_procpath[strlen(pathname)+2+1]; // extra gh characters
++    memset(redirected_procpath, 0, MAXPROCBUF+1);
 +
 +    if (hackproc) {
 +        if (strncmp(pathname, "/proc/", 6) == 0) {
-+            snprintf(redirected_procpath, strlen(pathname)+2, "/ghproc/%s", pathname+6);
-+            fprintf(stderr, "[qemu] changing %s to %s\n", pathname, redirected_procpath);
++            snprintf(redirected_procpath, MAXPROCBUF, "/ghproc/%s", pathname+6);
++            fprintf(stderr, "[qemu] hackproc - changing %s to %s\n", pathname, redirected_procpath);
 +            pathname = redirected_procpath;
 +        }
 +    }
@@ -716,7 +718,7 @@ index 27adee9..59b6e40 100644
  
      if (is_proc_myself(pathname, "exe")) {
          int execfd = qemu_getauxval(AT_EXECFD);
-@@ -8155,6 +8290,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
+@@ -8155,6 +8292,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
      return 0;
  }
  
@@ -867,7 +869,7 @@ index 27adee9..59b6e40 100644
  /* This is an internal helper for do_syscall so that it is easier
   * to have a single return point, so that actions, such as logging
   * of syscall results, can be performed.
-@@ -8227,6 +8506,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8227,6 +8508,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
              if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
                  return -TARGET_EFAULT;
              ret = get_errno(safe_read(arg1, p, arg3));
@@ -879,7 +881,7 @@ index 27adee9..59b6e40 100644
              if (ret >= 0 &&
                  fd_trans_host_to_target_data(arg1)) {
                  ret = fd_trans_host_to_target_data(arg1)(p, ret);
-@@ -8447,7 +8731,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8447,7 +8733,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
               * before the execve completes and makes it the other
               * program's problem.
               */
