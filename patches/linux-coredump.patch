@@ -517,7 +517,7 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..b9aff15 100644
+index 27adee9..1091982 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
 @@ -130,10 +130,20 @@
@@ -703,8 +703,8 @@ index 27adee9..b9aff15 100644
          { NULL, NULL, NULL }
      };
 +#ifdef GREENHOUSE
-+    int MAXPROCBUF = strlen(pathname)+1;
-+    char redirected_procpath[strlen(pathname)+2+1]; // extra gh characters
++    int MAXPROCBUF = strlen(pathname)+2+1; // account for extra 'gh' characters
++    char redirected_procpath[MAXPROCBUF+1];
 +    memset(redirected_procpath, 0, MAXPROCBUF+1);
 +
 +    if (hackproc) {
