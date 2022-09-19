@@ -763,11 +763,7 @@ index 27adee9..decf52d 100644
          unlock_user(host_msg, msg, len);
      } else {
  fail:
-<<<<<<< HEAD
 @@ -8025,6 +8149,29 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
-=======
-@@ -8025,6 +8186,27 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
->>>>>>> 4c6e8bf24fae6c2e60c88230af0a32951ca2d49a
  #endif
          { NULL, NULL, NULL }
      };
@@ -797,11 +793,7 @@ index 27adee9..decf52d 100644
  
      if (is_proc_myself(pathname, "exe")) {
          int execfd = qemu_getauxval(AT_EXECFD);
-<<<<<<< HEAD
 @@ -8155,6 +8302,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
-=======
-@@ -8155,6 +8337,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
->>>>>>> 4c6e8bf24fae6c2e60c88230af0a32951ca2d49a
      return 0;
  }
  
@@ -952,11 +944,7 @@ index 27adee9..decf52d 100644
  /* This is an internal helper for do_syscall so that it is easier
   * to have a single return point, so that actions, such as logging
   * of syscall results, can be performed.
-<<<<<<< HEAD
 @@ -8227,6 +8518,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-=======
-@@ -8227,6 +8553,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
->>>>>>> 4c6e8bf24fae6c2e60c88230af0a32951ca2d49a
              if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
                  return -TARGET_EFAULT;
              ret = get_errno(safe_read(arg1, p, arg3));
@@ -968,11 +956,7 @@ index 27adee9..decf52d 100644
              if (ret >= 0 &&
                  fd_trans_host_to_target_data(arg1)) {
                  ret = fd_trans_host_to_target_data(arg1)(p, ret);
-<<<<<<< HEAD
 @@ -8447,7 +8743,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-=======
-@@ -8447,7 +8778,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
->>>>>>> 4c6e8bf24fae6c2e60c88230af0a32951ca2d49a
               * before the execve completes and makes it the other
               * program's problem.
               */
