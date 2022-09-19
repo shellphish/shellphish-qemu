@@ -517,7 +517,7 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..5dd624f 100644
+index 27adee9..decf52d 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
 @@ -130,10 +130,20 @@
@@ -698,7 +698,7 @@ index 27adee9..5dd624f 100644
          unlock_user(host_msg, msg, len);
      } else {
  fail:
-@@ -8025,6 +8149,27 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
+@@ -8025,6 +8149,29 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
  #endif
          { NULL, NULL, NULL }
      };
@@ -710,13 +710,15 @@ index 27adee9..5dd624f 100644
 +
 +    if (hackproc) {
 +        result = realpath(pathname, rpath);
-+        // fprintf(stderr, "[GREENHOUSE] rpath = %s\n", rpath);
-+        if (result != NULL && strncmp(rpath, "/proc/", 6) == 0) {
++        if (result == NULL) {
++            snprintf(rpath, PATH_MAX, "%s", pathname);
++        }
++        if (strncmp(rpath, "/proc/", 6) == 0) {
 +            snprintf(redirected_path, PATH_MAX+1, "/ghproc/%s", rpath+6);
 +            fprintf(stderr, "[qemu] hackproc - changing %s to %s\n", rpath, redirected_path);
 +            pathname = redirected_path;
 +        }
-+        else if (result != NULL && strncmp(rpath, "/dev/", 5) == 0) {
++        else if (strncmp(rpath, "/dev/", 5) == 0) {
 +            snprintf(redirected_path, PATH_MAX+1, "/ghdev/%s", rpath+5);
 +            fprintf(stderr, "[qemu] hackdev - changing %s to %s\n", rpath, redirected_path);
 +            pathname = redirected_path;
@@ -726,7 +728,7 @@ index 27adee9..5dd624f 100644
  
      if (is_proc_myself(pathname, "exe")) {
          int execfd = qemu_getauxval(AT_EXECFD);
-@@ -8155,6 +8300,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
+@@ -8155,6 +8302,150 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
      return 0;
  }
  
@@ -877,7 +879,7 @@ index 27adee9..5dd624f 100644
  /* This is an internal helper for do_syscall so that it is easier
   * to have a single return point, so that actions, such as logging
   * of syscall results, can be performed.
-@@ -8227,6 +8516,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8227,6 +8518,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
              if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
                  return -TARGET_EFAULT;
              ret = get_errno(safe_read(arg1, p, arg3));
@@ -889,7 +891,7 @@ index 27adee9..5dd624f 100644
              if (ret >= 0 &&
                  fd_trans_host_to_target_data(arg1)) {
                  ret = fd_trans_host_to_target_data(arg1)(p, ret);
-@@ -8447,7 +8741,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+@@ -8447,7 +8743,17 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
               * before the execve completes and makes it the other
               * program's problem.
               */
