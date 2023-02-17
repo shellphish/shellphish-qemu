@@ -377,10 +377,10 @@ index 0b02a92..7cb872f 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 24d1eb7..c513ce3 100644
+index 24d1eb7..4fdc182 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -289,6 +289,53 @@ static void handle_arg_stack_size(const char *arg)
+@@ -289,6 +289,58 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -402,6 +402,11 @@ index 24d1eb7..c513ce3 100644
 +static void handle_arg_read_marker(const char *arg)
 +{
 +    qemu_set_read_marker(arg);
++}
++
++static void handle_arg_mmap_start(const char *arg)
++{
++    qemu_set_mmap_start(arg);
 +}
 +
 +#ifdef GREENHOUSE
@@ -434,7 +439,7 @@ index 24d1eb7..c513ce3 100644
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -423,8 +470,28 @@ static const struct qemu_argument arg_table[] = {
+@@ -423,8 +475,30 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -448,6 +453,8 @@ index 24d1eb7..c513ce3 100644
       "path",       "set the elf interpreter prefix to 'path'"},
 +    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
 +     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
++    {"S",          "MMAP_START",       true,  handle_arg_mmap_start,
++     "mmap_start", "mmap base for the guest program"},
 +#ifdef GREENHOUSE
 +    {"hackbind",   "QEMU_HACKBIND",    false,   handle_arg_hackbind,
 +     "",           "use hack to get around ipv6 addrs and conflicting binds"},
@@ -463,24 +470,50 @@ index 24d1eb7..c513ce3 100644
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
       "size",       "set the stack size to 'size' bytes"},
      {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
+diff --git a/linux-user/mmap.c b/linux-user/mmap.c
+index 00c05e6..4740aef 100644
+--- a/linux-user/mmap.c
++++ b/linux-user/mmap.c
+@@ -246,6 +246,19 @@ static int mmap_frag(abi_ulong real_start,
+ #endif
+ abi_ulong mmap_next_start = TASK_UNMAPPED_BASE;
+ 
++void qemu_set_mmap_start(const char *arg)
++{
++    int ret = sscanf(arg, "0x" TARGET_FMT_lx, &mmap_next_start);
++    if (ret != 1) {
++        fprintf(stderr, "Fail to parse mmap_start: '%s', expect 0xXXXXXXXX\n", arg);
++        exit(1);
++    }
++	if ((mmap_next_start & 0xfff) != 0) {
++        fprintf(stderr, "mmap_start: '%s' is not page-alignd\n", arg);
++        exit(1);
++	}
++}
++
+ unsigned long last_brk;
+ 
+ /* Subroutine of mmap_find_vma, used when we have pre-allocated a chunk
 diff --git a/linux-user/qemu.h b/linux-user/qemu.h
-index 534753c..7201263 100644
+index 534753c..2331ddb 100644
 --- a/linux-user/qemu.h
 +++ b/linux-user/qemu.h
-@@ -225,6 +225,8 @@ int info_is_fdpic(struct image_info *info);
+@@ -225,6 +225,9 @@ int info_is_fdpic(struct image_info *info);
  uint32_t get_elf_eflags(int fd);
  int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
  int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 +void qemu_set_core_dump_prefix(const char *prefix);
 +void qemu_set_read_marker(const char *args);
++void qemu_set_mmap_start(const char *args);
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
-@@ -402,6 +404,12 @@ extern long safe_syscall_base(int *pending, long number, ...);
+@@ -402,6 +405,13 @@ extern long safe_syscall_base(int *pending, long number, ...);
  
  /* syscall.c */
  int host_to_target_waitstatus(int status);
 +#ifdef GREENHOUSE
++void qemu_set_hookhack(const char *arg);
 +void qemu_set_hackbind(const char *arg);
 +void qemu_set_hackproc(const char *arg);
 +void qemu_set_hacksysinfo(const char *arg);
