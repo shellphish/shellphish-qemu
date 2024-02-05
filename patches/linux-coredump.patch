@@ -1,8 +1,8 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index 58aea60..2c62811 100644
+index 42902c9..5d87520 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -144,6 +144,33 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -150,6 +150,33 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
@@ -36,16 +36,28 @@ index 58aea60..2c62811 100644
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -152,12 +179,41 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+@@ -158,45 +185,40 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
      int tb_exit;
      uint8_t *tb_ptr = itb->tc.ptr;
  
--    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
--                           "Trace %d: %p ["
--                           TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
--                           cpu->cpu_index, itb->tc.ptr,
--                           itb->cs_base, itb->pc, itb->flags,
--                           lookup_symbol(itb->pc));
+-     // GREENHOUSE PATCH
+-    if (hookhack && qemu_log_in_addr_range(itb->pc)) {
+-        CPUClass *cc = CPU_GET_CLASS(cpu);
+-        GByteArray *buf;\
+-        int addr = 0;
+-        int size = 0;
+-        int* val, valptr;
+-
+-        // TAINT_func_mem_check(pc, 4);
+-        cpu_synchronize_state(cpu);
+-        // cc->dump_state(cpu, stderr, CPU_DUMP_FPU);
+-        for (addr = 0; addr < cpu->gdb_num_g_regs; addr++) {
+-            buf =  g_byte_array_new();
+-            size = cc->gdb_read_register(cpu, buf, addr);
+-            val = g_byte_array_free(buf, false);
+-            valptr = *val;
+-            if (TAINT_func_mem_check(valptr, 1)) {
+-                qemu_log("[TAINT] FOUND PC: %x reg: %d, raw: %x\n", itb->pc, addr, *val);
 +    // decide whether to start tracing
 +    if(unlikely(trace_start_addr != 0 && trace_started == 0)) {
 +        if(unlikely(trace_start_addr >= itb->pc && trace_start_addr < itb->pc + itb->size))
@@ -56,19 +68,33 @@ index 58aea60..2c62811 100644
 +            if (!nth_start_trace_addr_occurrence)
 +            {
 +                trace_started = 1;
-+            }
-+        }
-+    }
-+
+             }
+         }
+     }
+ 
+-    // GREENHOUSE PATCH
+-    if (hacklog) {
 +    if(trace_started) {
-+        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+         qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+-                            "Trace %d PID %d: %p ["
+-                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+-                            cpu->cpu_index, getpid(), itb->tc.ptr,
+-                            itb->cs_base, itb->pc, itb->flags,
+-                            lookup_symbol(itb->pc));
 +                               "Trace %d: %p ["
 +                               TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
 +                               cpu->cpu_index, itb->tc.ptr,
 +                               itb->cs_base, itb->pc, itb->flags,
 +                               lookup_symbol(itb->pc));
-+    }
-+
+     }
+-    else {
+-        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+-                            "Trace %d: %p ["
+-                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+-                            cpu->cpu_index, itb->tc.ptr,
+-                            itb->cs_base, itb->pc, itb->flags,
+-                            lookup_symbol(itb->pc));
+ 
 +    if(unlikely(core_dumped == 0 && core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
 +        if (nth_core_addr_occurrence) {
 +            nth_core_addr_occurrence -= 1;
@@ -80,10 +106,9 @@ index 58aea60..2c62811 100644
 +			core_addr_dumping = 0;
 +            core_dumped = 1;
 +        }
-+    }
+     }
  
  #if defined(DEBUG_DISAS)
-     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
 diff --git a/include/elf.h b/include/elf.h
 index 7a418ee..a539160 100644
 --- a/include/elf.h
@@ -377,10 +402,10 @@ index 0b02a92..7cb872f 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 24d1eb7..42f464c 100644
+index 72bc9c8..aff7e87 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -289,6 +289,56 @@ static void handle_arg_stack_size(const char *arg)
+@@ -298,6 +298,26 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -404,40 +429,10 @@ index 24d1eb7..42f464c 100644
 +    qemu_set_read_marker(arg);
 +}
 +
-+static void handle_arg_mmap_start(const char *arg)
-+{
-+    qemu_set_mmap_start(arg);
-+}
-+
-+static void handle_arg_execve(const char *arg)
-+{
-+    qemu_set_execve_path(arg);
-+}
-+
-+static void handle_arg_hackproc(const char *arg)
-+{
-+    qemu_set_hackproc(arg);
-+}
-+
-+static void handle_arg_hackbind(const char *arg)
-+{
-+    qemu_set_hackbind(arg);
-+}
-+
-+static void handle_arg_hacksysinfo(const char *arg)
-+{
-+    qemu_set_hacksysinfo(arg);
-+}
-+
-+static void handle_arg_hookhack(const char *arg)
-+{
-+    qemu_set_hookhack(arg);
-+}
-+
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -423,8 +473,28 @@ static const struct qemu_argument arg_table[] = {
+@@ -470,8 +490,16 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -451,71 +446,22 @@ index 24d1eb7..42f464c 100644
       "path",       "set the elf interpreter prefix to 'path'"},
 +    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
 +     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
-+    {"S",          "MMAP_START",       true,  handle_arg_mmap_start,
-+     "mmap_start", "mmap base for the guest program"},
-+    {"hackbind",   "QEMU_HACKBIND",    false,   handle_arg_hackbind,
-+     "",           "use hack to get around ipv6 addrs and conflicting binds"},
-+    {"hackproc",   "QEMU_HACKPROC",    false,   handle_arg_hackproc,
-+     "",           "use hack to get around needing to mount a writable /proc"},
-+    {"hacksysinfo","QEMU_SYSINFO",    false,   handle_arg_hacksysinfo,
-+     "",           "hack sysinfo system call to provide fake resource info"},
-+    {"execve",     "QEMU_EXECVE",      true,   handle_arg_execve,
-+     "path",       "use interpreter at 'path' when a process calls execve()"},
-+    {"hookhack",   "QEMU_HOOKHACK",    false,   handle_arg_hookhack,
-+     "",           "use hack to force the target binary to read from stdin"},
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
       "size",       "set the stack size to 'size' bytes"},
      {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
-diff --git a/linux-user/mmap.c b/linux-user/mmap.c
-index 00c05e6..4740aef 100644
---- a/linux-user/mmap.c
-+++ b/linux-user/mmap.c
-@@ -246,6 +246,19 @@ static int mmap_frag(abi_ulong real_start,
- #endif
- abi_ulong mmap_next_start = TASK_UNMAPPED_BASE;
- 
-+void qemu_set_mmap_start(const char *arg)
-+{
-+    int ret = sscanf(arg, "0x" TARGET_FMT_lx, &mmap_next_start);
-+    if (ret != 1) {
-+        fprintf(stderr, "Fail to parse mmap_start: '%s', expect 0xXXXXXXXX\n", arg);
-+        exit(1);
-+    }
-+	if ((mmap_next_start & 0xfff) != 0) {
-+        fprintf(stderr, "mmap_start: '%s' is not page-alignd\n", arg);
-+        exit(1);
-+	}
-+}
-+
- unsigned long last_brk;
- 
- /* Subroutine of mmap_find_vma, used when we have pre-allocated a chunk
 diff --git a/linux-user/qemu.h b/linux-user/qemu.h
-index 534753c..8427701 100644
+index ca73467..b1221a4 100644
 --- a/linux-user/qemu.h
 +++ b/linux-user/qemu.h
-@@ -225,6 +225,9 @@ int info_is_fdpic(struct image_info *info);
+@@ -232,6 +232,8 @@ int info_is_fdpic(struct image_info *info);
  uint32_t get_elf_eflags(int fd);
  int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
  int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 +void qemu_set_core_dump_prefix(const char *prefix);
 +void qemu_set_read_marker(const char *args);
-+void qemu_set_mmap_start(const char *args);
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
-@@ -402,6 +405,11 @@ extern long safe_syscall_base(int *pending, long number, ...);
- 
- /* syscall.c */
- int host_to_target_waitstatus(int status);
-+void qemu_set_hookhack(const char *arg);
-+void qemu_set_hackbind(const char *arg);
-+void qemu_set_hackproc(const char *arg);
-+void qemu_set_hacksysinfo(const char *arg);
-+void qemu_set_execve_path(const char *path);
- 
- /* strace.c */
- void print_syscall(void *cpu_env, int num,
 diff --git a/linux-user/signal.c b/linux-user/signal.c
 index 73de934..57fa7a6 100644
 --- a/linux-user/signal.c
@@ -559,213 +505,10 @@ index 73de934..57fa7a6 100644
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
 diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 27adee9..1d63491 100644
+index 856c7e3..92791b7 100644
 --- a/linux-user/syscall.c
 +++ b/linux-user/syscall.c
-@@ -130,10 +130,21 @@
- #include "fd-trans.h"
- #include "tcg/tcg.h"
- 
-+int used_ports[512] = {0};
-+int ports_index  = 0;
-+bool hackbind    = false;
-+bool hackproc    = false;
-+bool hacksysinfo = false;
-+bool hookhack    = false;
-+unsigned int hookhack_done = 0;
-+char *qemu_execve_path;
-+
- #ifndef CLONE_IO
- #define CLONE_IO                0x80000000      /* Clone io context */
- #endif
- 
-+#define BINPRM_BUF_SIZE 128
-+
- /* We can't directly call the host clone syscall, because this will
-  * badly confuse libc (breaking mutexes, for example). So we must
-  * divide clone flags into:
-@@ -864,6 +875,53 @@ static abi_ulong target_brk;
- static abi_ulong target_original_brk;
- static abi_ulong brk_page;
- 
-+void qemu_set_hackbind(const char *arg) {
-+    hackbind = true;
-+}
-+
-+void qemu_set_hackproc(const char *arg) {
-+    hackproc = true;
-+}
-+
-+void qemu_set_hacksysinfo(const char *arg) {
-+    hacksysinfo = true;
-+}
-+
-+void qemu_set_execve_path(const char *path)
-+{
-+    qemu_execve_path = strdup(path);
-+}
-+
-+void qemu_set_hookhack(const char *arg)
-+{
-+    hookhack = true;
-+}
-+
-+
-+
-+static void parse_ghpath(const char* pathname, char* redirected_path) {
-+    char* result;
-+    char rpath[PATH_MAX+1];
-+
-+    memset(rpath, 0, sizeof(rpath));
-+    if (hackproc) {
-+        result = realpath(pathname, rpath);
-+        if (result == NULL) {
-+            snprintf(rpath, PATH_MAX, "%s", pathname);
-+        }
-+
-+        if (strncmp(rpath, "/proc/", 6) == 0) {
-+            snprintf(redirected_path, PATH_MAX, "/ghproc/%s", rpath+6);
-+            return;
-+        }
-+        else if (strncmp(rpath, "/dev/", 5) == 0) {
-+            snprintf(redirected_path, PATH_MAX, "/ghdev/%s", rpath+5);
-+            return;
-+        }
-+    }
-+    snprintf(redirected_path, PATH_MAX, "%s", pathname);
-+}
-+
- void target_set_brk(abi_ulong new_brk)
- {
-     target_original_brk = target_brk = HOST_PAGE_ALIGN(new_brk);
-@@ -1388,6 +1446,10 @@ static abi_long do_select(int n,
-     struct timeval tv;
-     struct timespec ts, *ts_ptr;
-     abi_long ret;
-+	if(hookhack) {
-+		puts("[HOOK] select invoked!");
-+		return n;
-+	}
- 
-     ret = copy_from_user_fdset_ptr(&rfds, &rfds_ptr, rfd_addr, n);
-     if (ret) {
-@@ -3231,6 +3293,11 @@ static abi_long do_socket(int domain, int type, int protocol)
-         return -TARGET_EPROTONOSUPPORT;
-     }
- 
-+    if (hackbind && domain == AF_INET6) {
-+        // handle all ipv6 networking as ipv4
-+        domain = AF_INET;
-+    }
-+
-     if (domain == AF_PACKET ||
-         (domain == AF_INET && type == SOCK_PACKET)) {
-         protocol = tswap16(protocol);
-@@ -3271,6 +3338,10 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
- {
-     void *addr;
-     abi_long ret;
-+    char ip[INET6_ADDRSTRLEN+1] = "";
-+    unsigned short port = 0, newport = 0;
-+    unsigned short reuse = 0, retries = 0;
-+    void* cust_addr = 0;
- 
-     if ((int)addrlen < 0) {
-         return -TARGET_EINVAL;
-@@ -3282,7 +3353,71 @@ static abi_long do_bind(int sockfd, abi_ulong target_addr,
-     if (ret)
-         return ret;
- 
--    return get_errno(bind(sockfd, addr, addrlen));
-+    if (hackbind) {
-+        if(((struct sockaddr*)addr)->sa_family == AF_INET) {
-+            inet_ntop(AF_INET, &((struct sockaddr_in*)addr)->sin_addr, ip, sizeof(ip));
-+            port = ntohs(((struct sockaddr_in*)addr)->sin_port);
-+        }
-+        else if (((struct sockaddr*)addr)->sa_family == AF_INET6) {
-+            cust_addr = alloca(sizeof(struct sockaddr_in));
-+            // forces a ipv6 bind address to ipv4
-+            port = ntohs(((struct sockaddr_in6*)addr)->sin6_port);
-+            memset(((struct sockaddr_in*)cust_addr), 0, sizeof(struct sockaddr_in));
-+
-+            fprintf(stderr, "[qemu] Using custom bind, forcing ipv6 protocol to ipv4 on addr 0.0.0.0 port %d\n", port);
-+            inet_pton(AF_INET, "0.0.0.0", &((struct sockaddr_in*)cust_addr)->sin_addr);
-+            inet_ntop(AF_INET, &((struct sockaddr_in*)cust_addr)->sin_addr, ip, sizeof(ip));
-+            ((struct sockaddr_in*)cust_addr)->sin_port = htons(port);
-+            ((struct sockaddr_in*)cust_addr)->sin_family = AF_INET;
-+            addr = cust_addr;
-+            addrlen = sizeof(struct sockaddr_in);
-+        }
-+
-+        newport = port;
-+        retries = 0;
-+         // keep trying different ports until we get a successful bind or exceed retries
-+        while (retries < 3) {
-+            fprintf(stderr, "[qemu] Trying ip: %s on sockfd %d\n", ip, sockfd);
-+            ret = get_errno(bind(sockfd, addr, addrlen));
-+            if (!ret) {
-+                fprintf(stderr, "[qemu] Successful Bind %d\n", (int)ret);
-+                used_ports[ports_index] = newport;
-+                ports_index = ports_index + 1;
-+                return ret;
-+            }
-+            if (newport <= 0) {
-+                if (((struct sockaddr*)addr)->sa_family == AF_INET6 || ((struct sockaddr*)addr)->sa_family == AF_INET) {
-+                    fprintf(stderr, "[qemu] Forcing port %d to 80 and retrying...", newport);
-+                    newport = 80;
-+                }
-+            }
-+            else {
-+                newport = newport + 1;
-+                while(1) {
-+                    reuse = 0;
-+                    for (int i = 0; i < ports_index; i++) {
-+                        if (newport == used_ports[i]) {
-+                            newport = newport + 1;
-+                            reuse = 1;
-+                            break;
-+                        }
-+                    }
-+                    if(reuse == 0) {
-+                        break;
-+                    }
-+                }
-+                fprintf(stderr, "[qemu] bind failed, retrying with port %d\n", newport);
-+                retries = retries + 1;
-+            }
-+
-+            ((struct sockaddr_in*)addr)->sin_port = htons(newport);
-+        }
-+    }
-+    else {
-+        ret = get_errno(bind(sockfd, addr, addrlen));
-+    }
-+
-+    return ret;
- }
- 
- /* do_connect() Must return target values and target errnos. */
-@@ -3485,6 +3620,19 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
-     abi_long ret;
-     int host_flags;
- 
-+	if(hookhack) {
-+		int fd;
-+		puts("[HOOK] accept hooked!");
-+		fd = dup(0);
-+		printf("[HOOK] fd: %d\n", fd);
-+		if(hookhack_done > 0) {
-+			puts("[HOOK] done!");
-+			exit(0);
-+		}
-+		hookhack_done++;
-+		return fd;
-+	}
-+
-     host_flags = target_to_host_bitmask(flags, fcntl_flags_tbl);
- 
-     if (target_addr == 0) {
-@@ -3639,6 +3787,20 @@ fail:
+@@ -3856,6 +3856,20 @@ fail:
      return ret;
  }
  
@@ -786,21 +529,7 @@ index 27adee9..1d63491 100644
  /* do_recvfrom() Must return target values and target errnos. */
  static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
                              abi_ulong target_addr,
-@@ -3652,6 +3814,13 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
-     host_msg = lock_user(VERIFY_WRITE, msg, len, 0);
-     if (!host_msg)
-         return -TARGET_EFAULT;
-+
-+	if(hookhack) {
-+		abi_long ret = (abi_long) read(fd, host_msg, len);
-+        unlock_user(host_msg, msg, len);
-+		return ret;
-+	}
-+
-     if (target_addr) {
-         if (get_user_u32(addrlen, target_addrlen)) {
-             ret = -TARGET_EFAULT;
-@@ -3687,6 +3856,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+@@ -3929,6 +3943,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
                  goto fail;
              }
          }
@@ -810,180 +539,10 @@ index 27adee9..1d63491 100644
          unlock_user(host_msg, msg, len);
      } else {
  fail:
-@@ -8025,6 +8197,11 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
- #endif
-         { NULL, NULL, NULL }
-     };
-+    char redirected_path[PATH_MAX+1];
-+    memset(redirected_path, 0, sizeof(redirected_path));
-+
-+    parse_ghpath(pathname, redirected_path);
-+    pathname = redirected_path;
+@@ -8670,6 +8687,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+             }
+             // END GREENHOUSE PATCH TAINT
  
-     if (is_proc_myself(pathname, "exe")) {
-         int execfd = qemu_getauxval(AT_EXECFD);
-@@ -8155,6 +8332,148 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
-     return 0;
- }
- 
-+/* qemu_execve() Must return target values and target errnos. */
-+static abi_long qemu_execve(char *filename, char *argv[],
-+                  char *envp[])
-+{
-+    char *i_arg = NULL, *i_name = NULL;
-+    char **new_argp;
-+    int argc, fd, ret, i, offset = 3;
-+    int tokCount = 0;
-+    char *cp;
-+    char *token;
-+    char *qemu_path_tokens;
-+    char *qemu_path;
-+    char buf[BINPRM_BUF_SIZE];
-+
-+    fprintf(stderr, "[qemu] doing qemu_execven on filename %s\n", filename);
-+    memset(buf, 0, BINPRM_BUF_SIZE);
-+
-+
-+    for (argc = 0; argv[argc] != NULL; argc++) {
-+        /* nothing */ ;
-+        // fprintf(stderr, "   - arg %s\n", argv[argc]);
-+    }
-+
-+    fd = open(filename, O_RDONLY);
-+    if (fd == -1) {
-+        // fprintf(stderr, "   - ERR1 %d\n", -ENOENT);
-+        return -ENOENT;
-+    }
-+
-+    ret = read(fd, buf, BINPRM_BUF_SIZE);
-+    if (ret == -1) {
-+        close(fd);
-+        // fprintf(stderr, "   - ERR2 %d\n", -ENOENT);
-+        return -ENOENT;
-+    }
-+
-+    close(fd);
-+
-+    /* adapted from the kernel
-+     * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/fs/binfmt_script.c
-+     */
-+    if ((buf[0] == '#') && (buf[1] == '!')) {
-+        /*
-+         * This section does the #! interpretation.
-+         * Sorta complicated, but hopefully it will work.  -TYT
-+         */
-+
-+        buf[BINPRM_BUF_SIZE - 1] = '\0';
-+        cp = strchr(buf, '\n');
-+        if (cp == NULL) {
-+            cp = buf+BINPRM_BUF_SIZE-1;
-+        }
-+        *cp = '\0';
-+        while (cp > buf) {
-+            cp--;
-+            if ((*cp == ' ') || (*cp == '\t')) {
-+                *cp = '\0';
-+            } else {
-+                break;
-+            }
-+        }
-+        for (cp = buf+2; (*cp == ' ') || (*cp == '\t'); cp++) {
-+            /* nothing */ ;
-+        }
-+        if (*cp == '\0') {
-+            return -ENOEXEC; /* No interpreter name found */
-+        }
-+        i_name = cp;
-+        i_arg = NULL;
-+        for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++) {
-+            /* nothing */ ;
-+        }
-+        while ((*cp == ' ') || (*cp == '\t')) {
-+            *cp++ = '\0';
-+        }
-+        if (*cp) {
-+            i_arg = cp;
-+        }
-+
-+        if (i_arg) {
-+            offset = 5;
-+        } else {
-+            offset = 4;
-+        }
-+    }
-+
-+    qemu_path_tokens = strdup(qemu_execve_path);
-+    token = strtok(qemu_path_tokens, " ");
-+    qemu_path = strdup(token);
-+    token = strtok(NULL, " ");
-+    while (token != NULL) {
-+        token = strtok(NULL, " ");
-+        tokCount += 1;
-+    }
-+    offset += 2 + tokCount;
-+
-+    new_argp = alloca((argc + offset + 1) * sizeof(void *));
-+    /* Copy the original arguments with offset */
-+    for (i = 0; i < argc; i++) {
-+        // fprintf(stderr, "   - argv %s\n", argv[i]);
-+        new_argp[i + offset] = strdup(argv[i]);
-+    }
-+
-+    new_argp[0] = strdup(qemu_path);
-+    new_argp[1] = strdup("-0");
-+
-+    if (i_name) {
-+        new_argp[2] = i_name;
-+        offset -= 1; // iname is 2nd and 2nd last arg
-+
-+    } else {
-+        new_argp[2] = argv[0];
-+    }
-+
-+
-+    qemu_path_tokens = strdup(qemu_execve_path);
-+    token = strtok(qemu_path_tokens, " ");
-+    while (tokCount > 0 && token != NULL) {
-+        token = strtok(NULL, " ");
-+        new_argp[offset - 2 - tokCount] = strdup(token);
-+        tokCount -= 1;
-+    }
-+
-+    new_argp[offset - 2] = strdup("-execve");
-+    new_argp[offset - 1] = strdup(qemu_execve_path);
-+
-+    if (i_name) {
-+        offset += 1; // iname is 2nd and 2nd last arg
-+        new_argp[offset - 1] = i_name;
-+
-+        if (i_arg) {
-+            new_argp[offset - 2] = i_name;
-+            new_argp[offset - 1] = i_arg;
-+        }
-+    }
-+
-+    new_argp[offset] = filename;
-+    new_argp[argc + offset] = NULL;
-+
-+    return get_errno(execve(qemu_path, new_argp, envp));
-+}
-+
- /* This is an internal helper for do_syscall so that it is easier
-  * to have a single return point, so that actions, such as logging
-  * of syscall results, can be performed.
-@@ -8178,6 +8497,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-     struct statfs stfs;
- #endif
-     void *p;
-+    char redirected_path[PATH_MAX+1];
-+    memset(redirected_path, 0, sizeof(redirected_path));
- 
-     switch(num) {
-     case TARGET_NR_exit:
-@@ -8227,6 +8548,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
-                 return -TARGET_EFAULT;
-             ret = get_errno(safe_read(arg1, p, arg3));
 +            if (ret >= 0) {
 +                if(memmem(p, ret, read_marker, rm_len)) {
 +                    last_rm_fd = arg1;
@@ -992,76 +551,6 @@ index 27adee9..1d63491 100644
              if (ret >= 0 &&
                  fd_trans_host_to_target_data(arg1)) {
                  ret = fd_trans_host_to_target_data(arg1)(p, ret);
-@@ -8447,7 +8773,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-              * before the execve completes and makes it the other
-              * program's problem.
-              */
--            ret = get_errno(safe_execve(p, argp, envp));
-+            // ret = get_errno(safe_execve(p, argp, envp));
-+            if (qemu_execve_path && *qemu_execve_path) {
-+                ret = get_errno(qemu_execve(p, argp, envp));
-+            }
-+            else {
-+                ret = get_errno(safe_execve(p, argp, envp));
-+            }
-             unlock_user(p, arg1, 0);
- 
-             goto execve_end;
-@@ -8689,6 +9021,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-         if (!(p = lock_user_string(arg1))) {
-             return -TARGET_EFAULT;
-         }
-+        parse_ghpath(p, redirected_path);
-+        p = redirected_path;
-         ret = get_errno(access(path(p), arg2));
-         unlock_user(p, arg1, 0);
-         return ret;
-@@ -8698,6 +9032,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-         if (!(p = lock_user_string(arg2))) {
-             return -TARGET_EFAULT;
-         }
-+        parse_ghpath(p, redirected_path);
-+        p = redirected_path;
-         ret = get_errno(faccessat(arg1, p, arg3, 0));
-         unlock_user(p, arg2, 0);
-         return ret;
-@@ -9977,6 +10313,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-         if (!(p = lock_user_string(arg1))) {
-             return -TARGET_EFAULT;
-         }
-+        parse_ghpath(p, redirected_path);
-+        p = redirected_path;
-         ret = get_errno(stat(path(p), &st));
-         unlock_user(p, arg1, 0);
-         goto do_stat;
-@@ -9986,6 +10324,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-         if (!(p = lock_user_string(arg1))) {
-             return -TARGET_EFAULT;
-         }
-+        parse_ghpath(p, redirected_path);
-+        p = redirected_path;
-         ret = get_errno(lstat(path(p), &st));
-         unlock_user(p, arg1, 0);
-         goto do_stat;
-@@ -10084,9 +10424,15 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-                 if (!lock_user_struct(VERIFY_WRITE, target_value, arg1, 0))
-                     return -TARGET_EFAULT;
-                 __put_user(value.uptime, &target_value->uptime);
--                __put_user(value.loads[0], &target_value->loads[0]);
--                __put_user(value.loads[1], &target_value->loads[1]);
--                __put_user(value.loads[2], &target_value->loads[2]);
-+                if (hacksysinfo) {
-+                    __put_user(0, &target_value->loads[0]);
-+                    __put_user(0, &target_value->loads[1]);
-+                    __put_user(0, &target_value->loads[2]);
-+                } else {
-+                    __put_user(value.loads[0], &target_value->loads[0]);
-+                    __put_user(value.loads[1], &target_value->loads[1]);
-+                    __put_user(value.loads[2], &target_value->loads[2]);
-+                }
-                 __put_user(value.totalram, &target_value->totalram);
-                 __put_user(value.freeram, &target_value->freeram);
-                 __put_user(value.sharedram, &target_value->sharedram);
 diff --git a/target/mips/translate.c b/target/mips/translate.c
 index c64a1bc..449d2a1 100644
 --- a/target/mips/translate.c

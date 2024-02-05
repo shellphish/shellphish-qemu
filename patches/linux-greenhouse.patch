@@ -1,0 +1,3560 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index 58aea60..42902c9 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -41,6 +41,12 @@
+ #include "sysemu/cpu-timers.h"
+ #include "sysemu/replay.h"
+ 
++#include "../../linux-user/qemu.h"  // GREENHOUSE PATCH
++#include "qemu/log.h"  // GREENHOUSE PATCH
++#include "sysemu/hw_accel.h" // GREENHOUSE PATCH
++#include "afl/afl-qemu-cpu-inl.h" // GREENHOUSE PATCH TAINT
++#include "afl/afl-qemu-taint.h" // GREENHOUSE PATCH TAINT
++
+ /* -icount align implementation. */
+ 
+ typedef struct SyncClocks {
+@@ -152,12 +158,46 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+     int tb_exit;
+     uint8_t *tb_ptr = itb->tc.ptr;
+ 
+-    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+-                           "Trace %d: %p ["
+-                           TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+-                           cpu->cpu_index, itb->tc.ptr,
+-                           itb->cs_base, itb->pc, itb->flags,
+-                           lookup_symbol(itb->pc));
++     // GREENHOUSE PATCH
++    if (hookhack && qemu_log_in_addr_range(itb->pc)) {
++        CPUClass *cc = CPU_GET_CLASS(cpu);
++        GByteArray *buf;\
++        int addr = 0;
++        int size = 0;
++        int* val, valptr;
++
++        // TAINT_func_mem_check(pc, 4);
++        cpu_synchronize_state(cpu);
++        // cc->dump_state(cpu, stderr, CPU_DUMP_FPU);
++        for (addr = 0; addr < cpu->gdb_num_g_regs; addr++) {
++            buf =  g_byte_array_new();
++            size = cc->gdb_read_register(cpu, buf, addr);
++            val = g_byte_array_free(buf, false);
++            valptr = *val;
++            if (TAINT_func_mem_check(valptr, 1)) {
++                qemu_log("[TAINT] FOUND PC: %x reg: %d, raw: %x\n", itb->pc, addr, *val);
++            }
++        }
++    }
++
++    // GREENHOUSE PATCH
++    if (hacklog) {
++        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
++                            "Trace %d PID %d: %p ["
++                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
++                            cpu->cpu_index, getpid(), itb->tc.ptr,
++                            itb->cs_base, itb->pc, itb->flags,
++                            lookup_symbol(itb->pc));
++    }
++    else {
++        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
++                            "Trace %d: %p ["
++                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
++                            cpu->cpu_index, itb->tc.ptr,
++                            itb->cs_base, itb->pc, itb->flags,
++                            lookup_symbol(itb->pc));
++
++    }
+ 
+ #if defined(DEBUG_DISAS)
+     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
+@@ -407,11 +447,13 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
+     TranslationBlock *tb;
+     target_ulong cs_base, pc;
+     uint32_t flags;
++    bool was_translated = false, was_chained = false; // GREENHOUSE PATCH TAINT
+ 
+     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+     if (tb == NULL) {
+         mmap_lock();
+         tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
++        was_translated = true; // GREENHOUSE PATCH TAINT
+         mmap_unlock();
+         /* We add the TB in the virtual pc hash table for the fast lookup */
+         qatomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
+@@ -428,7 +470,14 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
+     /* See if we can patch the calling TB. */
+     if (last_tb) {
+         tb_add_jump(last_tb, tb_exit, tb);
++        was_chained = true; // GREENHOUSE PATCH TAINT
++    }
++
++    // GREENHOUSE PATCH TAINT
++    if (was_translated || was_chained) {
++        afl_request_tsl(pc, cs_base, flags, cpu->cflags_next_tb, was_chained ? last_tb : NULL, tb_exit);
+     }
++    // END GREENHOUSE PATCH TAINT
+     return tb;
+ }
+ 
+diff --git a/accel/tcg/tcg-runtime.c b/accel/tcg/tcg-runtime.c
+index 446465a..9c11461 100644
+--- a/accel/tcg/tcg-runtime.c
++++ b/accel/tcg/tcg-runtime.c
+@@ -31,6 +31,35 @@
+ #include "disas/disas.h"
+ #include "exec/log.h"
+ #include "tcg/tcg.h"
++#include "../../afl/afl-qemu-taint.h" // GREENHOUSE PATCH TAINT
++
++ // GREENHOUSE PATCH TAINT
++void taint_gen_getload(TCGv addr, int off);
++
++void HELPER(taint_getload1)(CPUArchState *env, target_ulong addr) {
++
++  TAINT_func_mem_check(addr, 1);
++
++}
++
++void HELPER(taint_getload2)(CPUArchState *env, target_ulong addr) {
++
++  TAINT_func_mem_check(addr, 2);
++
++}
++
++void HELPER(taint_getload4)(CPUArchState *env, target_ulong addr) {
++
++  TAINT_func_mem_check(addr, 4);
++
++}
++
++void HELPER(taint_getload8)(CPUArchState *env, target_ulong addr) {
++
++  TAINT_func_mem_check(addr, 8);
++
++}
++ // END GREENHOUSE PATCH TAINT
+ 
+ /* 32-bit helpers */
+ 
+@@ -168,3 +197,6 @@ void HELPER(exit_atomic)(CPUArchState *env)
+ {
+     cpu_loop_exit_atomic(env_cpu(env), GETPC());
+ }
++
++
++#include "../../afl/afl-qemu-tcg-runtime-inl.h" // GREENHOUSE PATCH TAINT
+\ No newline at end of file
+diff --git a/accel/tcg/tcg-runtime.h b/accel/tcg/tcg-runtime.h
+index 4eda24e..7fc2224 100644
+--- a/accel/tcg/tcg-runtime.h
++++ b/accel/tcg/tcg-runtime.h
+@@ -1,3 +1,8 @@
++DEF_HELPER_FLAGS_2(taint_getload1, TCG_CALL_NO_RWG, void, env, tl) // GREENHOUSE PATCH TAINT
++DEF_HELPER_FLAGS_2(taint_getload2, TCG_CALL_NO_RWG, void, env, tl) // GREENHOUSE PATCH TAINT
++DEF_HELPER_FLAGS_2(taint_getload4, TCG_CALL_NO_RWG, void, env, tl) // GREENHOUSE PATCH TAINT
++DEF_HELPER_FLAGS_2(taint_getload8, TCG_CALL_NO_RWG, void, env, tl) // GREENHOUSE PATCH TAINT
++
+ DEF_HELPER_FLAGS_2(div_i32, TCG_CALL_NO_RWG_SE, s32, s32, s32)
+ DEF_HELPER_FLAGS_2(rem_i32, TCG_CALL_NO_RWG_SE, s32, s32, s32)
+ DEF_HELPER_FLAGS_2(divu_i32, TCG_CALL_NO_RWG_SE, i32, i32, i32)
+@@ -320,3 +325,5 @@ DEF_HELPER_FLAGS_4(gvec_leu32, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+ DEF_HELPER_FLAGS_4(gvec_leu64, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+ 
+ DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
++
++DEF_HELPER_FLAGS_1(afl_entry_routine, TCG_CALL_NO_RWG, void, env) // GREENHOUSE PATCH TAINT
+diff --git a/accel/tcg/translator.c b/accel/tcg/translator.c
+index fb1e19c..e2cb05a 100644
+--- a/accel/tcg/translator.c
++++ b/accel/tcg/translator.c
+@@ -19,6 +19,8 @@
+ #include "exec/plugin-gen.h"
+ #include "sysemu/replay.h"
+ 
++#include "../../afl/afl-qemu-common.h" // GREENHOUSE PATCH TAINT
++
+ /* Pairs with tcg_clear_temp_count.
+    To be called by #TranslatorOps.{translate_insn,tb_stop} if
+    (1) the target is sufficiently clean to support reporting,
+@@ -69,6 +71,13 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
+             plugin_gen_insn_start(cpu, db);
+         }
+ 
++        // GREENHOUSE PATCH TAINT
++        if (db->pc_next == afl_entry_point) {
++          afl_setup();
++          gen_helper_afl_entry_routine(cpu_env);
++        }
++        // END GREENHOUSE PATCH TAINT
++
+         /* Pass breakpoint hits to target for further processing */
+         if (!db->singlestep_enabled
+             && unlikely(!QTAILQ_EMPTY(&cpu->breakpoints))) {
+diff --git a/afl/afl-qemu-common.h b/afl/afl-qemu-common.h
+new file mode 100644
+index 0000000..64e391e
+--- /dev/null
++++ b/afl/afl-qemu-common.h
+@@ -0,0 +1,98 @@
++/*
++   american fuzzy lop++ - high-performance binary-only instrumentation
++   -------------------------------------------------------------------
++
++   Originally written by Andrew Griffiths <agriffiths@google.com> and
++                         Michal Zalewski
++
++   TCG instrumentation and block chaining support by Andrea Biondo
++                                      <andrea.biondo965@gmail.com>
++
++   QEMU 3.1.1 port, TCG thread-safety, CompareCoverage and NeverZero
++   counters by Andrea Fioraldi <andreafioraldi@gmail.com>
++
++   Copyright 2015, 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++   This code is a shim patched into the separately-distributed source
++   code of QEMU 3.1.0. It leverages the built-in QEMU tracing functionality
++   to implement AFL-style instrumentation and to take care of the remaining
++   parts of the AFL fork server logic.
++
++   The resulting QEMU binary is essentially a standalone instrumentation
++   tool; for an example of how to leverage it for other purposes, you can
++   have a look at afl-showmap.c.
++
++ */
++
++#ifndef __AFL_QEMU_COMMON
++#define __AFL_QEMU_COMMON
++
++#define PERSISTENT_DEFAULT_MAX_CNT 1000
++
++#ifdef CPU_NB_REGS
++  #define AFL_REGS_NUM CPU_NB_REGS
++#elif TARGET_ARM
++  #define AFL_REGS_NUM 16
++#elif TARGET_AARCH64
++  #define AFL_REGS_NUM 32
++#else
++  #define AFL_REGS_NUM 100
++#endif
++
++typedef void (*afl_persistent_hook_fn)(uint64_t *regs, uint64_t guest_base,
++                                       uint8_t *input_buf,
++                                       uint32_t input_buf_len);
++
++/* Declared in afl-qemu-cpu-inl.h */
++
++extern abi_ulong      afl_entry_point;
++extern abi_ulong      afl_persistent_addr;
++extern abi_ulong      afl_persistent_ret_addr;
++extern unsigned char  afl_fork_child;
++extern unsigned char  is_persistent;
++extern target_long    persistent_stack_offset;
++extern unsigned char  persistent_first_pass;
++extern unsigned char  persistent_save_gpr;
++extern uint64_t       persistent_saved_gpr[AFL_REGS_NUM];
++extern int            persisent_retaddr_offset;
++
++extern unsigned char * shared_buf;
++extern unsigned int  * shared_buf_len;
++extern unsigned char   sharedmem_fuzzing;
++
++extern afl_persistent_hook_fn afl_persistent_hook_ptr;
++
++void afl_setup(void);
++void afl_forkserver(CPUState *cpu);
++
++// void afl_debug_dump_saved_regs(void);
++
++void afl_persistent_loop(void);
++
++void afl_gen_tcg_plain_call(void *func);
++
++/* Check if an address is valid in the current mapping */
++
++static inline int is_valid_addr(target_ulong addr) {
++
++  int          flags;
++  target_ulong page;
++
++  page = addr & TARGET_PAGE_MASK;
++
++  flags = page_get_flags(page);
++  if (!(flags & PAGE_VALID) || !(flags & PAGE_READ)) return 0;
++
++  return 1;
++
++}
++
++#endif
++
+diff --git a/afl/afl-qemu-cpu-inl.h b/afl/afl-qemu-cpu-inl.h
+new file mode 100644
+index 0000000..97ff176
+--- /dev/null
++++ b/afl/afl-qemu-cpu-inl.h
+@@ -0,0 +1,607 @@
++/*
++   american fuzzy lop++ - high-performance binary-only instrumentation
++   -------------------------------------------------------------------
++
++   Originally written by Andrew Griffiths <agriffiths@google.com> and
++                         Michal Zalewski
++
++   TCG instrumentation and block chaining support by Andrea Biondo
++                                      <andrea.biondo965@gmail.com>
++
++   QEMU 3.1.1 port, TCG thread-safety, CompareCoverage and NeverZero
++   counters by Andrea Fioraldi <andreafioraldi@gmail.com>
++
++   Copyright 2015, 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++   This code is a shim patched into the separately-distributed source
++   code of QEMU 3.1.1. It leverages the built-in QEMU tracing functionality
++   to implement AFL-style instrumentation and to take care of the remaining
++   parts of the AFL fork server logic.
++
++   The resulting QEMU binary is essentially a standalone instrumentation
++   tool; for an example of how to leverage it for other purposes, you can
++   have a look at afl-showmap.c.
++
++ */
++
++#define AFL_QEMU_STATIC_BUILD
++
++#include <sys/shm.h>
++#include "afl-qemu-common.h"
++#include "../config.h"
++#include "afl-qemu-taint.h"
++
++#ifndef AFL_QEMU_STATIC_BUILD
++  #include <dlfcn.h>
++#endif
++
++/***************************
++ * VARIOUS AUXILIARY STUFF *
++ ***************************/
++
++/* We use one additional file descriptor to relay "needs translation"
++   messages between the child and the fork server. */
++
++#define TSL_FD (FORKSRV_FD - 1)
++
++/* Exported variables populated by the code patched into elfload.c: */
++
++abi_ulong afl_entry_point;                      /* ELF entry point (_start) */
++
++abi_ulong    afl_persistent_addr, afl_persistent_ret_addr;
++unsigned int afl_persistent_cnt;
++
++unsigned char *afl_area_ptr;
++
++/* Set in the child process in forkserver mode: */
++
++static int forkserver_installed = 0;
++static int disable_caching = 0;
++
++unsigned char afl_fork_child;
++unsigned int  afl_forksrv_pid;
++unsigned char is_persistent;
++target_long   persistent_stack_offset;
++unsigned char persistent_first_pass = 1;
++unsigned char persistent_save_gpr;
++uint64_t      persistent_saved_gpr[AFL_REGS_NUM];
++int           persisent_retaddr_offset;
++
++unsigned char * shared_buf;
++unsigned int *shared_buf_len;
++unsigned char   sharedmem_fuzzing;
++
++afl_persistent_hook_fn afl_persistent_hook_ptr;
++
++/* Function declarations. */
++
++static void afl_wait_tsl(CPUState *, int);
++static void afl_request_tsl(target_ulong, target_ulong, uint32_t, uint32_t,
++                            TranslationBlock *, int);
++
++/* Data structures passed around by the translate handlers: */
++
++struct afl_tb {
++
++  target_ulong pc;
++  target_ulong cs_base;
++  uint32_t     flags;
++  uint32_t     cf_mask;
++
++};
++
++struct afl_tsl {
++
++  struct afl_tb tb;
++  char          is_chain;
++
++};
++
++struct afl_chain {
++
++  struct afl_tb last_tb;
++  uint32_t      cf_mask;
++  int           tb_exit;
++
++};
++
++/* Some forward decls: */
++
++static inline TranslationBlock *tb_find(CPUState *, TranslationBlock *, int,
++                                        uint32_t);
++static inline void              tb_add_jump(TranslationBlock *tb, int n,
++                                            TranslationBlock *tb_next);
++int                             open_self_maps(void *cpu_env, int fd);
++static void                     afl_map_shm_fuzz(void);
++
++/*************************
++ * ACTUAL IMPLEMENTATION *
++ *************************/
++
++/* Set up SHM region and initialize other stuff. */
++
++static void afl_map_shm_fuzz(void) {
++
++  char *id_str = getenv(SHM_FUZZ_ENV_VAR);
++
++  if (id_str) {
++
++    unsigned int shm_id = atoi(id_str);
++    unsigned char *map = (unsigned char *)shmat(shm_id, NULL, 0);
++    /* Whooooops. */
++
++    if (!map || map == (void *)-1) {
++
++      perror("[AFL] ERROR: could not access fuzzing shared memory");
++      exit(1);
++
++    }
++
++    shared_buf_len = (unsigned int *)map;
++    shared_buf = map + sizeof(unsigned int);
++
++    if (TAINT_var_debug) {
++
++      fprintf(stderr, "[DEBUG] successfully got fuzzing shared memory\n");
++
++    }
++
++  } else {
++
++    fprintf(stderr,
++            "[AFL] ERROR:  variable for fuzzing shared memory is not set\n");
++    exit(1);
++
++  }
++
++}
++
++void afl_setup(void) {
++
++  if (getenv("AFL_DEBUG") || getenv("DEBUG")) TAINT_var_debug = 1;
++
++  char *ptr, *id_str = getenv(SHM_ENV_VAR);
++
++  int shm_id;
++
++  if (id_str) {
++
++    shm_id = atoi(id_str);
++    afl_area_ptr = shmat(shm_id, NULL, 0);
++    if (afl_area_ptr == (void *)-1) exit(1);
++    TAINT_var_filemap = afl_area_ptr;
++
++  } else {
++  
++    TAINT_var_filemap = malloc(MAX_FILE);
++    TAINT_var_standalone = 1;
++  
++  }
++
++  if ((ptr = getenv("AFL_TAINT_INPUT")) && *ptr != '<' && *ptr != '>') {
++  
++    char buf[PATH_MAX];
++    if (realpath(ptr, buf) != NULL)
++      TAINT_var_filename = strdup(buf);
++    else
++      TAINT_var_filename = ptr;
++  
++    TAINT_var_is_file = 1;
++    TAINT_var_taint_open = 1;
++    TAINT_var_is_stdin = 0;
++  
++    if (TAINT_var_debug) fprintf(stderr, "[TAINT] input file is %s\n", TAINT_var_filename);
++
++  } else {
++
++    if (TAINT_var_debug) fprintf(stderr, "[TAINT] input is stdin\n");
++
++  }
++
++  /* pthread_atfork() seems somewhat broken in util/rcu.c, and I'm
++     not entirely sure what is the cause. This disables that
++     behaviour, and seems to work alright? */
++
++  rcu_disable_atfork();
++
++  disable_caching = getenv("AFL_QEMU_DISABLE_CACHE") != NULL;
++
++  is_persistent = getenv("AFL_QEMU_PERSISTENT_ADDR") != NULL;
++
++  if (is_persistent) {
++
++    afl_persistent_addr = strtoll(getenv("AFL_QEMU_PERSISTENT_ADDR"), NULL, 0);
++    if (getenv("AFL_QEMU_PERSISTENT_RET"))
++      afl_persistent_ret_addr =
++          strtoll(getenv("AFL_QEMU_PERSISTENT_RET"), NULL, 0);
++    /* If AFL_QEMU_PERSISTENT_RET is not specified patch the return addr */
++
++  }
++
++  if (getenv("AFL_QEMU_PERSISTENT_GPR")) persistent_save_gpr = 1;
++
++  if (getenv("AFL_QEMU_PERSISTENT_HOOK")) {
++
++#ifdef AFL_QEMU_STATIC_BUILD
++
++    fprintf(stderr,
++            "[AFL] ERROR: you cannot use AFL_QEMU_PERSISTENT_HOOK when "
++            "afl-qemu-trace is static\n");
++    exit(1);
++
++#else
++
++    persistent_save_gpr = 1;
++
++    void *plib = dlopen(getenv("AFL_QEMU_PERSISTENT_HOOK"), RTLD_NOW);
++    if (!plib) {
++
++      fprintf(stderr, "[AFL] ERROR: invalid AFL_QEMU_PERSISTENT_HOOK=%s\n",
++              getenv("AFL_QEMU_PERSISTENT_HOOK"));
++      exit(1);
++
++    }
++
++    int (*afl_persistent_hook_init_ptr)(void) =
++        dlsym(plib, "afl_persistent_hook_init");
++    if (afl_persistent_hook_init_ptr)
++      sharedmem_fuzzing = afl_persistent_hook_init_ptr();
++
++    afl_persistent_hook_ptr = dlsym(plib, "afl_persistent_hook");
++    if (!afl_persistent_hook_ptr) {
++
++      fprintf(stderr,
++              "[AFL] ERROR: failed to find the function "
++              "\"afl_persistent_hook\" in %s\n",
++              getenv("AFL_QEMU_PERSISTENT_HOOK"));
++      exit(1);
++
++    }
++
++#endif
++
++  }
++
++  if (getenv("AFL_QEMU_PERSISTENT_RETADDR_OFFSET"))
++    persisent_retaddr_offset =
++        strtoll(getenv("AFL_QEMU_PERSISTENT_RETADDR_OFFSET"), NULL, 0);
++
++  if (getenv("AFL_QEMU_PERSISTENT_CNT"))
++    afl_persistent_cnt = strtoll(getenv("AFL_QEMU_PERSISTENT_CNT"), NULL, 0);
++  else
++    afl_persistent_cnt = PERSISTENT_DEFAULT_MAX_CNT;
++
++}
++
++/* Fork server logic, invoked once we hit _start. */
++
++void afl_forkserver(CPUState *cpu) {
++
++  // unsigned int           map_size = 0;
++  unsigned char tmp[4] = {0};
++
++  if (forkserver_installed == 1) return;
++  forkserver_installed = 1;
++
++  if (getenv("AFL_QEMU_DEBUG_MAPS")) open_self_maps(cpu->env_ptr, 0);
++
++  pid_t child_pid;
++  int   t_fd[2];
++  unsigned char    child_stopped = 0;
++  unsigned int   was_killed;
++  int   status = 0;
++
++  // with the max ID value
++  if (MAP_SIZE <= FS_OPT_MAX_MAPSIZE)
++    status |= (FS_OPT_SET_MAPSIZE(MAP_SIZE) | FS_OPT_MAPSIZE);
++  if (sharedmem_fuzzing != 0) status |= FS_OPT_SHDMEM_FUZZ;
++  if (status) status |= (FS_OPT_ENABLED);
++  if (TAINT_var_debug)
++    fprintf(stderr, "[DEBUG] forkserver sending status %08x\n", status);
++  memcpy(tmp, &status, 4);
++
++  /* Tell the parent that we're alive. If the parent doesn't want
++     to talk, assume that we're not running in forkserver mode. */
++
++  if (write(FORKSRV_FD + 1, tmp, 4) != 4) return;
++
++  afl_forksrv_pid = getpid();
++
++  int first_run = 1;
++
++  if (sharedmem_fuzzing) {
++
++    if (read(FORKSRV_FD, &was_killed, 4) != 4) exit(2);
++
++    if ((was_killed & (0xffffffff & (FS_OPT_ENABLED | FS_OPT_SHDMEM_FUZZ))) ==
++        (FS_OPT_ENABLED | FS_OPT_SHDMEM_FUZZ))
++      afl_map_shm_fuzz();
++    else {
++
++      fprintf(stderr,
++              "[AFL] ERROR: afl-fuzz is old and does not support"
++              " shmem input");
++      exit(1);
++
++    }
++    
++    // set taint for shmem fuzz
++    TAINT_var_is_shmem = 1;
++    TAINT_var_is_file = 0;
++    TAINT_var_is_stdin = 0;
++    TAINT_var_taint_open = 0;
++
++    if (TAINT_var_debug) fprintf(stderr, "[TAINT] input is shmem\n");
++
++  }
++
++  /* All right, let's await orders... */
++
++  while (1) {
++
++    /* Whoops, parent dead? */
++
++    if (read(FORKSRV_FD, &was_killed, 4) != 4) exit(2);
++
++    /* If we stopped the child in persistent mode, but there was a race
++       condition and afl-fuzz already issued SIGKILL, write off the old
++       process. */
++
++    if (child_stopped && was_killed) {
++
++      child_stopped = 0;
++      if (waitpid(child_pid, &status, 0) < 0) exit(8);
++
++    }
++
++    TAINT_func_reset();
++    if (TAINT_var_is_shmem) {
++      volatile unsigned int testcase_len = *shared_buf_len;
++      TAINT_func_mem_add((unsigned long)shared_buf, testcase_len, 0);
++    }
++    
++
++    if (!child_stopped) {
++
++      /* Establish a channel with child to grab translation commands. We'll
++       read from t_fd[0], child will write to TSL_FD. */
++
++      if (pipe(t_fd) || dup2(t_fd[1], TSL_FD) < 0) exit(3);
++      close(t_fd[1]);
++
++      child_pid = fork();
++      if (child_pid < 0) exit(4);
++
++      if (!child_pid) {
++
++        /* Child process. Close descriptors and run free. */
++
++        afl_fork_child = 1;
++        close(FORKSRV_FD);
++        close(FORKSRV_FD + 1);
++        close(t_fd[0]);
++        return;
++
++      }
++
++      /* Parent. */
++
++      close(TSL_FD);
++
++    } else {
++
++      /* Special handling for persistent mode: if the child is alive but
++         currently stopped, simply restart it with SIGCONT. */
++
++      kill(child_pid, SIGCONT);
++      child_stopped = 0;
++
++    }
++
++    /* Parent. */
++
++    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) exit(5);
++
++    /* Collect translation requests until child dies and closes the pipe. */
++
++    afl_wait_tsl(cpu, t_fd[0]);
++
++    /* Get and relay exit status to parent. */
++
++    if (waitpid(child_pid, &status, is_persistent ? WUNTRACED : 0) < 0) exit(6);
++
++    /* In persistent mode, the child stops itself with SIGSTOP to indicate
++       a successful run. In this case, we want to wake it up without forking
++       again. */
++
++    if (WIFSTOPPED(status))
++      child_stopped = 1;
++    else if (unlikely(first_run && is_persistent)) {
++
++      fprintf(stderr, "[AFL] ERROR: no persistent iteration executed\n");
++      exit(12);  // Persistent is wrong
++
++    }
++
++    first_run = 0;
++
++    if (write(FORKSRV_FD + 1, &status, 4) != 4) exit(7);
++
++  }
++
++}
++
++/* A simplified persistent mode handler, used as explained in
++ * llvm_mode/README.md. */
++
++void afl_persistent_loop(void) {
++
++  static unsigned int            cycle_cnt;
++  static struct afl_tsl exit_cmd_tsl = {{-1, 0, 0, 0}, '\0'};
++
++  if (!afl_fork_child) return;
++
++  if (persistent_first_pass) {
++
++    /* Make sure that every iteration of __AFL_LOOP() starts with a clean slate.
++       On subsequent calls, the parent will take care of that, but on the first
++       iteration, it's our job to erase any trace of whatever happened
++       before the loop. */
++
++    if (is_persistent) {
++
++      memset(afl_area_ptr, 0, MAP_SIZE);
++
++    }
++
++    cycle_cnt = afl_persistent_cnt;
++    persistent_first_pass = 0;
++    persistent_stack_offset = TARGET_LONG_BITS / 8;
++
++    return;
++
++  }
++
++  if (is_persistent) {
++
++    if (--cycle_cnt) {
++
++      if (write(TSL_FD, &exit_cmd_tsl, sizeof(struct afl_tsl)) !=
++          sizeof(struct afl_tsl)) {
++
++        /* Exit the persistent loop on pipe error */
++        exit(0);
++
++      }
++
++      raise(SIGSTOP);
++
++    } else {
++
++      afl_area_ptr = NULL;
++      exit(0);
++
++    }
++
++  }
++
++}
++
++/* This code is invoked whenever QEMU decides that it doesn't have a
++   translation of a particular block and needs to compute it, or when it
++   decides to chain two TBs together. When this happens, we tell the parent to
++   mirror the operation, so that the next fork() has a cached copy. */
++
++static void afl_request_tsl(target_ulong pc, target_ulong cb, uint32_t flags,
++                            uint32_t cf_mask, TranslationBlock *last_tb,
++                            int tb_exit) {
++
++  if (disable_caching) return;
++
++  struct afl_tsl   t;
++  struct afl_chain c;
++
++  if (!afl_fork_child) return;
++
++  t.tb.pc = pc;
++  t.tb.cs_base = cb;
++  t.tb.flags = flags;
++  t.tb.cf_mask = cf_mask;
++  t.is_chain = (last_tb != NULL);
++
++  if (write(TSL_FD, &t, sizeof(struct afl_tsl)) != sizeof(struct afl_tsl))
++    return;
++
++  if (t.is_chain) {
++
++    c.last_tb.pc = last_tb->pc;
++    c.last_tb.cs_base = last_tb->cs_base;
++    c.last_tb.flags = last_tb->flags;
++    c.cf_mask = cf_mask;
++    c.tb_exit = tb_exit;
++
++    if (write(TSL_FD, &c, sizeof(struct afl_chain)) != sizeof(struct afl_chain))
++      return;
++
++  }
++
++}
++
++/* This is the other side of the same channel. Since timeouts are handled by
++   afl-fuzz simply killing the child, we can just wait until the pipe breaks. */
++
++static void afl_wait_tsl(CPUState *cpu, int fd) {
++
++  struct afl_tsl    t;
++  struct afl_chain  c;
++  TranslationBlock *tb, *last_tb;
++
++  while (1) {
++
++    unsigned char invalid_pc = 0;
++
++    /* Broken pipe means it's time to return to the fork server routine. */
++
++    if (read(fd, &t, sizeof(struct afl_tsl)) != sizeof(struct afl_tsl)) break;
++
++    /* Exit command for persistent */
++
++    if (t.tb.pc == (target_ulong)(-1)) return;
++
++    tb = tb_htable_lookup(cpu, t.tb.pc, t.tb.cs_base, t.tb.flags, t.tb.cf_mask);
++
++    if (!tb) {
++
++      /* The child may request to transate a block of memory that is not
++         mapped in the parent (e.g. jitted code or dlopened code).
++         This causes a SIGSEV in gen_intermediate_code() and associated
++         subroutines. We simply avoid caching of such blocks. */
++
++      if (is_valid_addr(t.tb.pc)) {
++
++        mmap_lock();
++        tb = tb_gen_code(cpu, t.tb.pc, t.tb.cs_base, t.tb.flags, t.tb.cf_mask);
++        mmap_unlock();
++
++      } else {
++
++        invalid_pc = 1;
++
++      }
++
++    }
++
++    if (t.is_chain) {
++
++      if (read(fd, &c, sizeof(struct afl_chain)) != sizeof(struct afl_chain))
++        break;
++
++      if (!invalid_pc) {
++
++        last_tb = tb_htable_lookup(cpu, c.last_tb.pc, c.last_tb.cs_base,
++                                   c.last_tb.flags, c.cf_mask);
++#define TB_JMP_RESET_OFFSET_INVALID 0xffff
++        if (last_tb && (last_tb->jmp_reset_offset[c.tb_exit] !=
++                        TB_JMP_RESET_OFFSET_INVALID)) {
++
++          tb_add_jump(last_tb, c.tb_exit, tb);
++
++        }
++
++      }
++
++    }
++
++  }
++
++  close(fd);
++
++}
++
+diff --git a/afl/afl-qemu-cpu-translate-inl.h b/afl/afl-qemu-cpu-translate-inl.h
+new file mode 100644
+index 0000000..0fc4e95
+--- /dev/null
++++ b/afl/afl-qemu-cpu-translate-inl.h
+@@ -0,0 +1,244 @@
++/*
++   american fuzzy lop++ - high-performance binary-only instrumentation
++   -------------------------------------------------------------------
++
++   Originally written by Andrew Griffiths <agriffiths@google.com> and
++                         Michal Zalewski
++
++   TCG instrumentation and block chaining support by Andrea Biondo
++                                      <andrea.biondo965@gmail.com>
++
++   QEMU 3.1.1 port, TCG thread-safety, CompareCoverage and NeverZero
++   counters by Andrea Fioraldi <andreafioraldi@gmail.com>
++
++   Copyright 2015, 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++   This code is a shim patched into the separately-distributed source
++   code of QEMU 3.1.0. It leverages the built-in QEMU tracing functionality
++   to implement AFL-style instrumentation and to take care of the remaining
++   parts of the AFL fork server logic.
++
++   The resulting QEMU binary is essentially a standalone instrumentation
++   tool; for an example of how to leverage it for other purposes, you can
++   have a look at afl-showmap.c.
++
++ */
++
++#include "afl-qemu-common.h"
++#include "tcg/tcg.h"
++#include "tcg/tcg-op.h"
++
++#if TCG_TARGET_REG_BITS == 64
++  #define _DEFAULT_MO MO_64
++#else
++  #define _DEFAULT_MO MO_32
++#endif
++
++/* Routines for debug */
++/*
++static void log_x86_saved_gpr(void) {
++
++  static const char reg_names[CPU_NB_REGS][4] = {
++
++#ifdef TARGET_X86_64
++        [R_EAX] = "rax",
++        [R_EBX] = "rbx",
++        [R_ECX] = "rcx",
++        [R_EDX] = "rdx",
++        [R_ESI] = "rsi",
++        [R_EDI] = "rdi",
++        [R_EBP] = "rbp",
++        [R_ESP] = "rsp",
++        [8]  = "r8",
++        [9]  = "r9",
++        [10] = "r10",
++        [11] = "r11",
++        [12] = "r12",
++        [13] = "r13",
++        [14] = "r14",
++        [15] = "r15",
++#else
++        [R_EAX] = "eax",
++        [R_EBX] = "ebx",
++        [R_ECX] = "ecx",
++        [R_EDX] = "edx",
++        [R_ESI] = "esi",
++        [R_EDI] = "edi",
++        [R_EBP] = "ebp",
++        [R_ESP] = "esp",
++#endif
++
++    };
++
++  int i;
++  for (i = 0; i < CPU_NB_REGS; ++i) {
++
++    fprintf(stderr, "%s = %lx\n", reg_names[i], persistent_saved_gpr[i]);
++
++  }
++
++}
++
++static void log_x86_sp_content(void) {
++
++  fprintf(stderr, ">> SP = %lx -> %lx\n", persistent_saved_gpr[R_ESP],
++*(unsigned long*)persistent_saved_gpr[R_ESP]);
++
++}*/
++
++static void callback_to_persistent_hook(void) {
++
++  afl_persistent_hook_ptr(persistent_saved_gpr, guest_base, shared_buf,
++                          *shared_buf_len);
++
++}
++
++static void gpr_saving(TCGv *cpu_regs, int regs_num) {
++
++  int      i;
++  TCGv_ptr gpr_sv;
++
++  TCGv_ptr first_pass_ptr = tcg_const_ptr(&persistent_first_pass);
++  TCGv     first_pass = tcg_temp_local_new();
++  TCGv     one = tcg_const_tl(1);
++  tcg_gen_ld8u_tl(first_pass, first_pass_ptr, 0);
++
++  TCGLabel *lbl_restore_gpr = gen_new_label();
++  tcg_gen_brcond_tl(TCG_COND_NE, first_pass, one, lbl_restore_gpr);
++
++  // save GPR registers
++  for (i = 0; i < regs_num; ++i) {
++
++    gpr_sv = tcg_const_ptr(&persistent_saved_gpr[i]);
++    tcg_gen_st_tl(cpu_regs[i], gpr_sv, 0);
++    tcg_temp_free_ptr(gpr_sv);
++
++  }
++
++  gen_set_label(lbl_restore_gpr);
++
++  afl_gen_tcg_plain_call(&afl_persistent_loop);
++
++  if (afl_persistent_hook_ptr)
++    afl_gen_tcg_plain_call(callback_to_persistent_hook);
++
++  // restore GPR registers
++  for (i = 0; i < regs_num; ++i) {
++
++    gpr_sv = tcg_const_ptr(&persistent_saved_gpr[i]);
++    tcg_gen_ld_tl(cpu_regs[i], gpr_sv, 0);
++    tcg_temp_free_ptr(gpr_sv);
++
++  }
++
++  tcg_temp_free_ptr(first_pass_ptr);
++  tcg_temp_free(first_pass);
++  tcg_temp_free(one);
++
++}
++
++static void restore_state_for_persistent(TCGv *cpu_regs, int regs_num, int sp) {
++
++  if (persistent_save_gpr) {
++
++    gpr_saving(cpu_regs, regs_num);
++
++  } else if (afl_persistent_ret_addr == 0) {
++
++    TCGv_ptr stack_off_ptr = tcg_const_ptr(&persistent_stack_offset);
++    TCGv     stack_off = tcg_temp_new();
++    tcg_gen_ld_tl(stack_off, stack_off_ptr, 0);
++    tcg_gen_sub_tl(cpu_regs[sp], cpu_regs[sp], stack_off);
++    tcg_temp_free(stack_off);
++
++  }
++
++}
++
++#define AFL_QEMU_TARGET_I386_SNIPPET                                          \
++  if (is_persistent) {                                                        \
++                                                                              \
++    if (s->pc == afl_persistent_addr) {                                       \
++                                                                              \
++      restore_state_for_persistent(cpu_regs, AFL_REGS_NUM, R_ESP);            \
++      /*afl_gen_tcg_plain_call(log_x86_saved_gpr);                            \
++      afl_gen_tcg_plain_call(log_x86_sp_content);*/                           \
++                                                                              \
++      if (afl_persistent_ret_addr == 0) {                                     \
++                                                                              \
++        TCGv paddr = tcg_const_tl(afl_persistent_addr);                       \
++        tcg_gen_qemu_st_tl(paddr, cpu_regs[R_ESP], persisent_retaddr_offset,  \
++                           _DEFAULT_MO);                                      \
++        tcg_temp_free(paddr);                                                 \
++                                                                              \
++      }                                                                       \
++                                                                              \
++      if (!persistent_save_gpr) afl_gen_tcg_plain_call(&afl_persistent_loop); \
++      /*afl_gen_tcg_plain_call(log_x86_sp_content);*/                         \
++                                                                              \
++    } else if (afl_persistent_ret_addr && s->pc == afl_persistent_ret_addr) { \
++                                                                              \
++      gen_jmp_im(s, afl_persistent_addr);                                     \
++      gen_eob(s);                                                             \
++                                                                              \
++    }                                                                         \
++                                                                              \
++  }
++
++// SP = 13, LINK = 14
++
++#define AFL_QEMU_TARGET_ARM_SNIPPET                                            \
++  if (is_persistent) {                                                         \
++                                                                               \
++    if (dc->pc == afl_persistent_addr) {                                       \
++                                                                               \
++      if (persistent_save_gpr) gpr_saving(cpu_R, AFL_REGS_NUM);                \
++                                                                               \
++      if (afl_persistent_ret_addr == 0) {                                      \
++                                                                               \
++        tcg_gen_movi_tl(cpu_R[14], afl_persistent_addr);                       \
++                                                                               \
++      }                                                                        \
++                                                                               \
++      if (!persistent_save_gpr) afl_gen_tcg_plain_call(&afl_persistent_loop);  \
++                                                                               \
++    } else if (afl_persistent_ret_addr && dc->pc == afl_persistent_ret_addr) { \
++                                                                               \
++      gen_bx_im(dc, afl_persistent_addr);                                      \
++                                                                               \
++    }                                                                          \
++                                                                               \
++  }
++
++// SP = 31, LINK = 30
++
++#define AFL_QEMU_TARGET_ARM64_SNIPPET                                         \
++  if (is_persistent) {                                                        \
++                                                                              \
++    if (s->pc == afl_persistent_addr) {                                       \
++                                                                              \
++      if (persistent_save_gpr) gpr_saving(cpu_X, AFL_REGS_NUM);               \
++                                                                              \
++      if (afl_persistent_ret_addr == 0) {                                     \
++                                                                              \
++        tcg_gen_movi_tl(cpu_X[30], afl_persistent_addr);                      \
++                                                                              \
++      }                                                                       \
++                                                                              \
++      if (!persistent_save_gpr) afl_gen_tcg_plain_call(&afl_persistent_loop); \
++                                                                              \
++    } else if (afl_persistent_ret_addr && s->pc == afl_persistent_ret_addr) { \
++                                                                              \
++      gen_goto_tb(s, 0, afl_persistent_addr);                                 \
++                                                                              \
++    }                                                                         \
++                                                                              \
++  }
++
+diff --git a/afl/afl-qemu-taint-inl.h b/afl/afl-qemu-taint-inl.h
+new file mode 100644
+index 0000000..8d3433b
+--- /dev/null
++++ b/afl/afl-qemu-taint-inl.h
+@@ -0,0 +1,442 @@
++
++#ifndef _AFL_QEMU_TAINT_INL_H
++
++#define _AFL_QEMU_TAINT_INL_H
++
++#include <sys/types.h>
++#include <unistd.h>
++#include "../config.h"
++
++int TAINT_var_standalone;
++int TAINT_var_is_file;
++int TAINT_var_is_stdin = 1;
++int TAINT_var_is_shmem;
++int TAINT_var_taint_open;
++int TAINT_var_debug;
++ssize_t TAINT_var_stdin_offset;
++char *TAINT_var_filename;
++unsigned char *TAINT_var_filemap;
++
++struct fd_entry {
++  int active;
++  int fd;
++  ssize_t offset;
++  struct fd_entry *next;
++};
++
++struct mem_entry {
++  int active;
++  uintptr_t start;
++  uintptr_t end;
++  size_t len;
++  ssize_t offset;
++  struct mem_entry *next;
++};
++
++static struct fd_entry *fd_entries;
++static struct mem_entry *mem_entries;
++static ssize_t highest_offset = 0;
++
++static void TAINT_func_fd_clean(void) {
++  if (fd_entries) {
++    struct fd_entry *g, *f = fd_entries;
++    while (f) {
++      g = f->next;
++      free(f);
++      f = g;
++    }
++    fd_entries = NULL;
++  }
++}
++
++static void TAINT_func_mem_clean(void) {
++  if (mem_entries) {
++    struct mem_entry *n, *m = mem_entries;
++    while (m) {
++      n = m->next;
++      free(m);
++      m = n;
++    }
++    mem_entries = NULL;
++  }
++}
++
++void TAINT_func_reset(void) {
++  TAINT_func_fd_clean();
++  TAINT_func_mem_clean();
++  if (!TAINT_var_is_shmem) {
++    if (TAINT_var_filename) {
++      TAINT_var_is_file = 1;
++      TAINT_var_taint_open = 1;
++    }
++    else TAINT_var_is_stdin = 1;
++  }
++  TAINT_var_stdin_offset = 0;
++  highest_offset = 0; 
++}
++
++void TAINT_func_fd_follow(int fd) {
++  struct fd_entry *f = (struct fd_entry *) malloc(sizeof(struct fd_entry));
++  if (!f) return;
++  if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD follow %d\n", fd);
++  f->active = 1;
++  f->fd = fd;
++  f->offset = 0;
++  if (fd_entries)
++    f->next = fd_entries;
++  else
++    f->next = NULL;
++  fd_entries = f;  
++}
++
++void TAINT_func_fd_unfollow(int fd) {
++
++  if (fd < 0) return;
++
++  if (fd == 0 && TAINT_var_is_stdin == 1) {
++    if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD unfollow %d\n", fd);
++    TAINT_var_is_stdin = 0;
++  }
++
++  if (fd_entries) {
++    struct fd_entry *f = fd_entries;
++    while (f) {
++      if (fd == f->fd) {
++        if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD unfollow %d\n", fd);
++        f->active = 0;
++        return;
++      }
++      f = f->next;
++    }
++  }
++}
++
++int TAINT_func_fd_is_tainted(int fd) {
++
++  if (fd < 0) return 0;
++
++  if (fd == 0 && TAINT_var_is_stdin) return 1;
++
++  if (TAINT_var_is_file && fd_entries) {
++    struct fd_entry *f = fd_entries;
++    while (f) {
++      if (fd == f->fd && f->active == 1) {
++        if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD match %d\n", fd);
++        return 1;
++      }
++      f = f->next;
++    }
++  }
++
++  return 0;
++}
++
++bool TAINT_func_mem_check(uintptr_t mem, size_t len) {
++  bool is_tainted = false;
++  if (mem_entries) {
++    struct mem_entry *m = mem_entries;
++    while (m) {
++      if ((m->active == 1) && (
++          (mem >= m->start && mem <= m->end) ||
++          (mem + len >= m->start && mem + len < m->end) ||
++          (mem <= m->start && mem + len > m->end)
++         )) {
++
++        //if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM likely found mem=0x%lx len=%lu\n", mem, len);
++
++        size_t index = 0;
++        while (index < len) {
++          if (mem + index >= m->start && mem + index <= m->end) {
++            unsigned int offset = mem + index + m->offset - m->start;
++            is_tainted = true;
++            if (TAINT_var_filemap && offset < MAX_FILE)
++              TAINT_var_filemap[offset] = '!';
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM found mem=0x%lx file_offset=%u\n",
++                    mem + index, offset);
++          }
++          index++;
++        }
++
++        if (mem >= m->start && mem + len < m->end)
++          return is_tainted;
++      }
++      m = m->next;
++    }
++  }
++  return is_tainted;
++}
++
++void TAINT_func_mem_add(uintptr_t mem, size_t len, ssize_t offset) {
++  if (!len) return;
++  struct mem_entry *m = (struct mem_entry *) malloc(sizeof(struct mem_entry));
++  if (!m) return;
++  if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM add mem=0x%lx len=%lu offset=%ld\n", mem, len, offset);
++  qemu_log("[TAINT] MEM add mem=0x%lx len=%lu offset=%ld\n", mem, len, offset);
++  if (offset + len > highest_offset)
++    highest_offset = offset + len;
++  m->active = 1;
++  m->start = mem;
++  m->len = len;
++  m->end = mem + len - 1;
++  if (offset > 0)
++    m->offset = offset;
++  else
++    m->offset = 0;
++  if (mem_entries)
++    m->next = mem_entries;
++  else
++    m->next = NULL;
++  mem_entries = m;  
++}
++
++void TAINT_func_mem_remove(uintptr_t mem, size_t len) {
++  if (mem_entries) {
++    struct mem_entry *m = mem_entries;
++    while (m) {
++
++      if ((m->active == 1) && (
++          (mem >= m->start && mem <= m->end) ||
++          (mem + len >= m->start && mem + len < m->end) ||
++          (mem <= m->start && mem + len > m->end)
++         )) {
++
++      if (m->start >= mem && m->end <= mem) {
++        if (mem == m->start && len == m->len) {
++          // complete removal, return
++          if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM remove mem=0x%lx len=%lu (full)\n", mem, len);
++          m->active = 0;
++          return;
++        }
++        if (mem <= m->start && len >= m->len && mem + len > m->end) {
++          // complete removal, dont return, might match more
++          if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM remove mem=0x%lx len=%lu (full)\n", mem, len);
++          m->active = 0;
++        } else { // partial removal
++
++          int split_len = 0;
++          uintptr_t split_ptr = 0;
++
++          if (mem > m->start) { // ending part is removed
++            if (mem + len - 1 < m->end) { // uh a middle block is removed
++              split_len = m->end - (mem + len - 1);
++              split_ptr = mem + len;
++            }
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM remove mem=0x%lx len=%lu\n", mem, m->end + 1 - mem);
++            m->len = mem - m->start;
++            m->end = m->start + m->len - 1;
++          }
++
++          if (!split_len && mem + len - 1 < m->end) {
++            // beginning part is removed
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM remove mem=0x%lx len=%lu\n", m->start, mem + len - m->start);
++            uintptr_t diff = (mem + len) - m->start;
++            m->start = (mem + len);
++            m->len = m->end - m->start + 1;
++            m->offset += diff;
++          }
++
++          if (split_len) {
++            uintptr_t diff = (mem + len) - m->start;
++            TAINT_func_mem_add(split_ptr, split_len, m->offset + diff);
++          }
++        }
++        // no return. this might try to remove consecutive mems
++      }
++      }
++      m = m->next;
++    }
++  }
++}
++
++void TAINT_func_mem_move(uintptr_t mem_old, size_t len_old, uintptr_t mem_new, size_t len_new) {
++  if (mem_entries) {
++    struct mem_entry *m = mem_entries;
++    while (m) {
++      if ((m->active == 1) && (
++          (mem_old >= m->start && mem_old <= m->end) ||
++          (mem_old + len_old >= m->start && mem_old + len_old < m->end) ||
++          (mem_old <= m->start && mem_old + len_old > m->end)
++         )) {
++        if (mem_old == m->start && len_old == m->len) {
++            // exact match - just update and return
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM move from mem=0x%lx len=%lu to mem=0x%lx len=%lu (full)\n", mem_old, len_old, mem_new, len_new);
++            m->start = mem_new;
++            if (len_new < m->len)
++              m->len = len_new;
++            m->end = mem_new + m->len - 1;
++            return;
++        }
++
++        int split_len = 0;
++        uintptr_t split_ptr = 0;
++        uintptr_t diff;
++
++        if (mem_old > m->start) { // ending part is moved
++          if (mem_old + len_old - 1 < m->end) { // uh a middle block is moved
++            split_len = m->end - (mem_old + len_old - 1);
++            split_ptr = mem_old + len_old;
++          }
++          diff = m->len;
++          m->len = mem_old - m->start;
++          diff -= m->len;
++          m->end = m->start + m->len - 1;
++          if (len_new >= diff) {
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM move from mem=0x%lx len=%lu to mem=0x%lx len=%lu\n", m->end, diff, mem_new, diff);
++            TAINT_func_mem_add(mem_new, diff, m->offset + m->len);
++          } else {
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM move from mem=0x%lx len=%lu to mem=0x%lx len=%lu\n", m->end, diff, mem_new, len_new);
++            TAINT_func_mem_add(mem_new, len_new, m->offset + m->len);
++          }
++        }
++
++        if (!split_len && mem_old + len_old - 1 < m->end) {
++          // beginning part is moved
++          diff = m->start - mem_old;
++          if (len_new - diff >= len_old) {
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM move from mem=0x%lx len=%lu to mem=0x%lx len=%lu\n", m->start, mem_old + len_old - m->start, mem_new + diff, len_old);
++            TAINT_func_mem_add(mem_new + diff, len_old, m->offset);
++          } else {
++            if (TAINT_var_debug) fprintf(stderr, "[TAINT] MEM move from mem=0x%lx len=%lu to mem=0x%lx len=%lu\n", m->start, mem_old + len_old - m->start, mem_new + diff, len_new - diff);
++            TAINT_func_mem_add(mem_new + diff, len_new - diff, m->offset);
++          }
++          diff = (mem_old + len_old) - m->start;
++          m->start = (mem_old + len_old);
++          m->len = m->end - m->start + 1;
++          m->offset += diff;
++        }
++
++        if (split_len) {
++          diff = (mem_old + len_old) - m->start;
++          TAINT_func_mem_add(split_ptr, split_len, m->offset + diff);
++        }
++      }
++      m = m->next;
++    }
++  }
++}
++
++void TAINT_func_offset_add(int fd, ssize_t offset) {
++  if (fd == 0 && TAINT_var_is_stdin && offset > 0)
++    TAINT_var_stdin_offset += offset;
++  if (TAINT_var_is_file && fd_entries) {
++    struct fd_entry *f = fd_entries;
++    while (f) {
++      if (fd == f->fd && f->active == 1) {
++        if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD offset add fd=%d offset+=%ld\n", fd, offset);
++        f->offset += offset;
++        return;
++      }
++      f = f->next;
++    }
++  }
++}
++
++void TAINT_func_offset_set(int fd, ssize_t offset) {
++  if (TAINT_var_is_file && fd_entries) {
++    struct fd_entry *f = fd_entries;
++    while (f) {
++      if (fd == f->fd && f->active == 1) {
++        if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD offset set fd=%d offset=%ld\n", fd, offset);
++        if (offset > 0)
++          f->offset = offset;
++        else
++          f->offset = 0;
++        return;
++      }
++      f = f->next;
++    }
++  }
++}
++
++ssize_t TAINT_func_offset_get(int fd) {
++
++  if (fd == 0 && TAINT_var_is_stdin)
++    return TAINT_var_stdin_offset;
++
++  if (TAINT_var_is_file && fd_entries) {
++    struct fd_entry *f = fd_entries;
++    while (f) {
++      if (fd == f->fd && f->active == 1) {
++        if (TAINT_var_debug) fprintf(stderr, "[TAINT] FD offset get fd=%d offset==%ld\n", fd, f->offset);
++        return f->offset;
++      }
++      f = f->next;
++    }
++  }
++
++  return 0;
++}
++
++int TAINT_func_filename_match(char *fname, int dfd) {
++
++  if (!TAINT_var_is_file) return 0;
++  if (fname == NULL || fname[0] == 0) return 0;
++  
++  DIR *dir = NULL;
++  int fd, ret = 0;
++  char rpath[PATH_MAX];
++
++  if (fname[0] != '/' && dfd >= 0) {
++    dir = opendir(".");
++    fd = dirfd(dir);
++    if (fchdir(dfd) != 0) {
++      closedir(dir);
++      dir = NULL;
++    }
++  }
++
++  if (realpath(fname, rpath) != NULL)
++    if (strcmp(rpath, TAINT_var_filename) == 0)
++      ret = 1;
++  if (strcmp(fname, TAINT_var_filename) == 0)
++    ret = 1;
++
++  if (dir != NULL) {
++    fd = fchdir(fd) == 0;
++    fd += closedir(dir);
++  }
++
++  return ret;
++
++}
++
++void TAINT_func_end(void) {
++
++  if (TAINT_var_standalone) {
++  
++    unsigned int i, j, len = highest_offset;
++    if (len > MAX_FILE)
++      len = MAX_FILE;
++    
++    fprintf(stderr, "[TAINT] MAP (length: %ld, shown: %d) ('!' = touched, '.' = untouched)\n", highest_offset, len);
++    for (i = 0; i < len; i++) {
++      if (i % 64 == 0) fprintf(stderr, "[ ");
++      if (TAINT_var_filemap[i])
++        fprintf(stderr, "!");
++      else
++        fprintf(stderr, ".");
++      if (i % 64 == 63) fprintf(stderr, " ]\n");
++    }
++    
++    j = highest_offset - len;
++    if (j) {
++      for (i = 0; i < j; i++) {
++        if ((i + len) % 64 == 0) fprintf(stderr, "[ ");
++        fprintf(stderr, "?");
++        if ((i + len) % 64 == 63) fprintf(stderr, " ]\n");
++      }
++    }
++    j = 64 - (len + j) % 64;
++    if (j != 64) {
++      for (i = 0; i < j; i++)
++        fprintf(stderr, " ");
++      fprintf(stderr, " ]\n");
++    }
++
++    TAINT_var_standalone = 0;
++  
++  }
++
++}
++
++#endif
+diff --git a/afl/afl-qemu-taint.h b/afl/afl-qemu-taint.h
+new file mode 100644
+index 0000000..16a1481
+--- /dev/null
++++ b/afl/afl-qemu-taint.h
+@@ -0,0 +1,33 @@
++
++#ifndef _AFL_QEMU_TAINT_H
++
++#define _AFL_QEMU_TAINT_H
++
++#include <sys/types.h>
++#include <unistd.h>
++
++extern int TAINT_var_standalone;
++extern int TAINT_var_is_file;
++extern int TAINT_var_is_stdin;
++extern int TAINT_var_is_shmem;
++extern int TAINT_var_taint_open;
++extern char *TAINT_var_filename;
++extern int TAINT_var_debug;
++extern unsigned char *TAINT_var_filemap;
++
++void TAINT_func_fd_follow(int fd);
++void TAINT_func_fd_unfollow(int fd);
++int  TAINT_func_fd_is_tainted(int fd);
++bool TAINT_func_mem_check(uintptr_t mem, size_t len);
++void TAINT_func_mem_add(uintptr_t mem, size_t len, ssize_t offset);
++void TAINT_func_mem_remove(uintptr_t mem, size_t len);
++void TAINT_func_mem_move(uintptr_t mem_old, size_t len_old, uintptr_t mem_new, size_t len_new);
++void TAINT_func_offset_add(int fd, ssize_t offset);
++void TAINT_func_offset_set(int fd, ssize_t offset);
++long int TAINT_func_offset_get(int fd);
++int  TAINT_func_filename_match(char *fname, int dfd);
++void TAINT_func_reset(void);
++void TAINT_func_end(void);
++
++#endif
++
+diff --git a/afl/afl-qemu-tcg-inl.h b/afl/afl-qemu-tcg-inl.h
+new file mode 100644
+index 0000000..f7c662d
+--- /dev/null
++++ b/afl/afl-qemu-tcg-inl.h
+@@ -0,0 +1,46 @@
++/*
++   american fuzzy lop++ - high-performance binary-only instrumentation
++   -------------------------------------------------------------------
++
++   Originally written by Andrew Griffiths <agriffiths@google.com> and
++                         Michal Zalewski
++
++   TCG instrumentation and block chaining support by Andrea Biondo
++                                      <andrea.biondo965@gmail.com>
++
++   QEMU 3.1.1 port, TCG thread-safety, CompareCoverage and NeverZero
++   counters by Andrea Fioraldi <andreafioraldi@gmail.com>
++
++   Copyright 2015, 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++   This code is a shim patched into the separately-distributed source
++   code of QEMU 3.1.0. It leverages the built-in QEMU tracing functionality
++   to implement AFL-style instrumentation and to take care of the remaining
++   parts of the AFL fork server logic.
++
++   The resulting QEMU binary is essentially a standalone instrumentation
++   tool; for an example of how to leverage it for other purposes, you can
++   have a look at afl-showmap.c.
++
++ */
++void afl_gen_tcg_plain_call(void *func);
++
++void afl_gen_tcg_plain_call(void *func) {
++
++  TCGOp *op = tcg_emit_op(INDEX_op_call);
++
++  TCGOP_CALLO(op) = 0;
++
++  op->args[0] = (uintptr_t)func;
++  op->args[1] = 0;
++  TCGOP_CALLI(op) = 0;
++
++}
++
+diff --git a/afl/afl-qemu-tcg-runtime-inl.h b/afl/afl-qemu-tcg-runtime-inl.h
+new file mode 100644
+index 0000000..681308a
+--- /dev/null
++++ b/afl/afl-qemu-tcg-runtime-inl.h
+@@ -0,0 +1,44 @@
++/*
++   american fuzzy lop++ - high-performance binary-only instrumentation
++   -------------------------------------------------------------------
++
++   Originally written by Andrew Griffiths <agriffiths@google.com> and
++                         Michal Zalewski
++
++   TCG instrumentation and block chaining support by Andrea Biondo
++                                      <andrea.biondo965@gmail.com>
++
++   QEMU 3.1.1 port, TCG thread-safety, CompareCoverage and NeverZero
++   counters by Andrea Fioraldi <andreafioraldi@gmail.com>
++
++   Copyright 2015, 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++   This code is a shim patched into the separately-distributed source
++   code of QEMU 3.1.0. It leverages the built-in QEMU tracing functionality
++   to implement AFL-style instrumentation and to take care of the remaining
++   parts of the AFL fork server logic.
++
++   The resulting QEMU binary is essentially a standalone instrumentation
++   tool; for an example of how to leverage it for other purposes, you can
++   have a look at afl-showmap.c.
++
++ */
++
++#include "afl-qemu-common.h"
++#include "tcg/tcg.h"
++
++void HELPER(afl_entry_routine)(CPUArchState *env) {
++
++  afl_forkserver(env_cpu(env));
++
++}
++
++#include <sys/mman.h>
++
+diff --git a/config.h b/config.h
+new file mode 100644
+index 0000000..b5b121c
+--- /dev/null
++++ b/config.h
+@@ -0,0 +1,431 @@
++/*
++   american fuzzy lop++ - vaguely configurable bits
++   ------------------------------------------------
++
++   Originally written by Michal Zalewski
++
++   Now maintained by Marc Heuse <mh@mh-sec.de>,
++                     Heiko Eißfeldt <heiko.eissfeldt@hexco.de>,
++                     Andrea Fioraldi <andreafioraldi@gmail.com>,
++                     Dominik Maier <mail@dmnk.co>
++
++   Copyright 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++ */
++
++// GREENHOUSE PATCH TAINT
++
++#ifndef _HAVE_CONFIG_H
++#define _HAVE_CONFIG_H
++
++#include "types.h"
++
++/* Version string: */
++
++// c = release, d = volatile github dev, e = experimental branch
++#define VERSION "++2.66d"
++
++/******************************************************
++ *                                                    *
++ *  Settings that may be of interest to power users:  *
++ *                                                    *
++ ******************************************************/
++
++/* Comment out to disable terminal colors (note that this makes afl-analyze
++   a lot less nice): */
++
++#define USE_COLOR
++
++/* If you want to have the original afl internal memory corruption checks.
++   Disabled by default for speed. it is better to use "make ASAN_BUILD=1". */
++
++//#define _WANT_ORIGINAL_AFL_ALLOC
++
++/* Comment out to disable fancy ANSI boxes and use poor man's 7-bit UI: */
++
++#ifndef ANDROID_DISABLE_FANCY  // Fancy boxes are ugly from adb
++  #define FANCY_BOXES
++#endif
++
++/* Default timeout for fuzzed code (milliseconds). This is the upper bound,
++   also used for detecting hangs; the actual value is auto-scaled: */
++
++#define EXEC_TIMEOUT 1000
++
++/* Timeout rounding factor when auto-scaling (milliseconds): */
++
++#define EXEC_TM_ROUND 20
++
++/* 64bit arch MACRO */
++#if (defined(__x86_64__) || defined(__arm64__) || defined(__aarch64__))
++  #define WORD_SIZE_64 1
++#endif
++
++/* Default memory limit for child process (MB): */
++
++#ifndef __NetBSD__
++  #ifndef WORD_SIZE_64
++    #define MEM_LIMIT 25
++  #else
++    #define MEM_LIMIT 50
++  #endif                                                  /* ^!WORD_SIZE_64 */
++#else /* NetBSD's kernel needs more space for stack, see discussion for issue \
++         #165 */
++  #define MEM_LIMIT 200
++#endif
++/* Default memory limit when running in QEMU mode (MB): */
++
++#define MEM_LIMIT_QEMU 200
++
++/* Default memory limit when running in Unicorn mode (MB): */
++
++#define MEM_LIMIT_UNICORN 200
++
++/* Number of calibration cycles per every new test case (and for test
++   cases that show variable behavior): */
++
++#define CAL_CYCLES 8
++#define CAL_CYCLES_LONG 40
++
++/* Number of subsequent timeouts before abandoning an input file: */
++
++#define TMOUT_LIMIT 250
++
++/* Maximum number of unique hangs or crashes to record: */
++
++#define KEEP_UNIQUE_HANG 500
++#define KEEP_UNIQUE_CRASH 5000
++
++/* Baseline number of random tweaks during a single 'havoc' stage: */
++
++#define HAVOC_CYCLES 256
++#define HAVOC_CYCLES_INIT 1024
++
++/* Maximum multiplier for the above (should be a power of two, beware
++   of 32-bit int overflows): */
++
++#define HAVOC_MAX_MULT 16
++#define HAVOC_MAX_MULT_MOPT 32
++
++/* Absolute minimum number of havoc cycles (after all adjustments): */
++
++#define HAVOC_MIN 16
++
++/* Power Schedule Divisor */
++#define POWER_BETA 1
++#define MAX_FACTOR (POWER_BETA * 32)
++
++/* Maximum stacking for havoc-stage tweaks. The actual value is calculated
++   like this:
++
++   n = random between 1 and HAVOC_STACK_POW2
++   stacking = 2^n
++
++   In other words, the default (n = 7) produces 2, 4, 8, 16, 32, 64, or
++   128 stacked tweaks: */
++
++#define HAVOC_STACK_POW2 7
++
++/* Caps on block sizes for cloning and deletion operations. Each of these
++   ranges has a 33% probability of getting picked, except for the first
++   two cycles where smaller blocks are favored: */
++
++#define HAVOC_BLK_SMALL 32
++#define HAVOC_BLK_MEDIUM 128
++#define HAVOC_BLK_LARGE 1500
++
++/* Extra-large blocks, selected very rarely (<5% of the time): */
++
++#define HAVOC_BLK_XL 32768
++
++/* Probabilities of skipping non-favored entries in the queue, expressed as
++   percentages: */
++
++#define SKIP_TO_NEW_PROB 99     /* ...when there are new, pending favorites */
++#define SKIP_NFAV_OLD_PROB 95   /* ...no new favs, cur entry already fuzzed */
++#define SKIP_NFAV_NEW_PROB 75   /* ...no new favs, cur entry not fuzzed yet */
++
++/* Splicing cycle count: */
++
++#define SPLICE_CYCLES 15
++
++/* Nominal per-splice havoc cycle length: */
++
++#define SPLICE_HAVOC 32
++
++/* Maximum offset for integer addition / subtraction stages: */
++
++#define ARITH_MAX 35
++
++/* Limits for the test case trimmer. The absolute minimum chunk size; and
++   the starting and ending divisors for chopping up the input file: */
++
++#define TRIM_MIN_BYTES 4
++#define TRIM_START_STEPS 16
++#define TRIM_END_STEPS 1024
++
++/* Maximum size of input file, in bytes (keep under 100MB): */
++
++#define MAX_FILE (1 * 1024 * 1024)
++
++/* The same, for the test case minimizer: */
++
++#define TMIN_MAX_FILE (10 * 1024 * 1024)
++
++/* Block normalization steps for afl-tmin: */
++
++#define TMIN_SET_MIN_SIZE 4
++#define TMIN_SET_STEPS 128
++
++/* Maximum dictionary token size (-x), in bytes: */
++
++#define MAX_DICT_FILE 128
++
++/* Length limits for auto-detected dictionary tokens: */
++
++#define MIN_AUTO_EXTRA 3
++#define MAX_AUTO_EXTRA 32
++
++/* Maximum number of user-specified dictionary tokens to use in deterministic
++   steps; past this point, the "extras/user" step will be still carried out,
++   but with proportionally lower odds: */
++
++#define MAX_DET_EXTRAS 200
++
++/* Maximum number of auto-extracted dictionary tokens to actually use in fuzzing
++   (first value), and to keep in memory as candidates. The latter should be much
++   higher than the former. */
++
++#define USE_AUTO_EXTRAS 128
++#define MAX_AUTO_EXTRAS (USE_AUTO_EXTRAS * 64)
++
++/* Scaling factor for the effector map used to skip some of the more
++   expensive deterministic steps. The actual divisor is set to
++   2^EFF_MAP_SCALE2 bytes: */
++
++#define EFF_MAP_SCALE2 3
++
++/* Minimum input file length at which the effector logic kicks in: */
++
++#define EFF_MIN_LEN 128
++
++/* Maximum effector density past which everything is just fuzzed
++   unconditionally (%): */
++
++#define EFF_MAX_PERC 90
++
++/* UI refresh frequency (Hz): */
++
++#define UI_TARGET_HZ 5
++
++/* Fuzzer stats file and plot update intervals (sec): */
++
++#define STATS_UPDATE_SEC 60
++#define PLOT_UPDATE_SEC 5
++
++/* Smoothing divisor for CPU load and exec speed stats (1 - no smoothing). */
++
++#define AVG_SMOOTHING 16
++
++/* Sync interval (every n havoc cycles): */
++
++#define SYNC_INTERVAL 8
++
++/* Output directory reuse grace period (minutes): */
++
++#define OUTPUT_GRACE 25
++
++/* Uncomment to use simple file names (id_NNNNNN): */
++
++// #define SIMPLE_FILES
++
++/* List of interesting values to use in fuzzing. */
++
++#define INTERESTING_8                                    \
++  -128,    /* Overflow signed 8-bit when decremented  */ \
++      -1,  /*                                         */ \
++      0,   /*                                         */ \
++      1,   /*                                         */ \
++      16,  /* One-off with common buffer size         */ \
++      32,  /* One-off with common buffer size         */ \
++      64,  /* One-off with common buffer size         */ \
++      100, /* One-off with common buffer size         */ \
++      127                        /* Overflow signed 8-bit when incremented  */
++
++#define INTERESTING_8_LEN 9
++
++#define INTERESTING_16                                    \
++  -32768,   /* Overflow signed 16-bit when decremented */ \
++      -129, /* Overflow signed 8-bit                   */ \
++      128,  /* Overflow signed 8-bit                   */ \
++      255,  /* Overflow unsig 8-bit when incremented   */ \
++      256,  /* Overflow unsig 8-bit                    */ \
++      512,  /* One-off with common buffer size         */ \
++      1000, /* One-off with common buffer size         */ \
++      1024, /* One-off with common buffer size         */ \
++      4096, /* One-off with common buffer size         */ \
++      32767                      /* Overflow signed 16-bit when incremented */
++
++#define INTERESTING_16_LEN 10
++
++#define INTERESTING_32                                          \
++  -2147483648LL,  /* Overflow signed 32-bit when decremented */ \
++      -100663046, /* Large negative number (endian-agnostic) */ \
++      -32769,     /* Overflow signed 16-bit                  */ \
++      32768,      /* Overflow signed 16-bit                  */ \
++      65535,      /* Overflow unsig 16-bit when incremented  */ \
++      65536,      /* Overflow unsig 16 bit                   */ \
++      100663045,  /* Large positive number (endian-agnostic) */ \
++      2147483647                 /* Overflow signed 32-bit when incremented */
++
++#define INTERESTING_32_LEN 8
++
++/***********************************************************
++ *                                                         *
++ *  Really exotic stuff you probably don't want to touch:  *
++ *                                                         *
++ ***********************************************************/
++
++/* Call count interval between reseeding the libc PRNG from /dev/urandom: */
++
++#define RESEED_RNG 100000
++
++/* Maximum line length passed from GCC to 'as' and used for parsing
++   configuration files: */
++
++#define MAX_LINE 8192
++
++/* Environment variable used to pass SHM ID to the called program. */
++
++#define SHM_ENV_VAR "__AFL_SHM_ID"
++
++/* Environment variable used to pass SHM FUZZ ID to the called program. */
++
++#define SHM_FUZZ_ENV_VAR "__AFL_SHM_FUZZ_ID"
++
++/* Other less interesting, internal-only variables. */
++
++#define CLANG_ENV_VAR "__AFL_CLANG_MODE"
++#define AS_LOOP_ENV_VAR "__AFL_AS_LOOPCHECK"
++#define PERSIST_ENV_VAR "__AFL_PERSISTENT"
++#define DEFER_ENV_VAR "__AFL_DEFER_FORKSRV"
++
++/* In-code signatures for deferred and persistent mode. */
++
++#define PERSIST_SIG "##SIG_AFL_PERSISTENT##"
++#define DEFER_SIG "##SIG_AFL_DEFER_FORKSRV##"
++
++/* Distinctive bitmap signature used to indicate failed execution: */
++
++#define EXEC_FAIL_SIG 0xfee1dead
++
++/* Distinctive exit code used to indicate MSAN trip condition: */
++
++#define MSAN_ERROR 86
++
++/* Designated file descriptors for forkserver commands (the application will
++   use FORKSRV_FD and FORKSRV_FD + 1): */
++
++#define FORKSRV_FD 198
++
++/* Fork server init timeout multiplier: we'll wait the user-selected
++   timeout plus this much for the fork server to spin up. */
++
++#define FORK_WAIT_MULT 10
++
++/* Calibration timeout adjustments, to be a bit more generous when resuming
++   fuzzing sessions or trying to calibrate already-added internal finds.
++   The first value is a percentage, the other is in milliseconds: */
++
++#define CAL_TMOUT_PERC 125
++#define CAL_TMOUT_ADD 50
++
++/* Number of chances to calibrate a case before giving up: */
++
++#define CAL_CHANCES 3
++
++/* Map size for the traced binary (2^MAP_SIZE_POW2). Must be greater than
++   2; you probably want to keep it under 18 or so for performance reasons
++   (adjusting AFL_INST_RATIO when compiling is probably a better way to solve
++   problems with complex programs). You need to recompile the target binary
++   after changing this - otherwise, SEGVs may ensue. */
++
++#define MAP_SIZE_POW2 16
++#define MAP_SIZE (1 << MAP_SIZE_POW2)
++
++/* Maximum allocator request size (keep well under INT_MAX): */
++
++#define MAX_ALLOC 0x40000000
++
++/* A made-up hashing seed: */
++
++#define HASH_CONST 0xa5b35705
++
++/* Constants for afl-gotcpu to control busy loop timing: */
++
++#define CTEST_TARGET_MS 5000
++#define CTEST_CORE_TRG_MS 1000
++#define CTEST_BUSY_CYCLES (10 * 1000 * 1000)
++
++/* Enable NeverZero counters in QEMU mode */
++
++#define AFL_QEMU_NOT_ZERO
++
++/* AFL RedQueen */
++
++#define CMPLOG_SHM_ENV_VAR "__AFL_CMPLOG_SHM_ID"
++
++/* CPU Affinity lockfile env var */
++
++#define CPU_AFFINITY_ENV_VAR "__AFL_LOCKFILE"
++
++/* Uncomment this to use inferior block-coverage-based instrumentation. Note
++   that you need to recompile the target binary for this to have any effect: */
++
++// #define COVERAGE_ONLY
++
++/* Uncomment this to ignore hit counts and output just one bit per tuple.
++   As with the previous setting, you will need to recompile the target
++   binary: */
++
++// #define SKIP_COUNTS
++
++/* Uncomment this to use instrumentation data to record newly discovered paths,
++   but do not use them as seeds for fuzzing. This is useful for conveniently
++   measuring coverage that could be attained by a "dumb" fuzzing algorithm: */
++
++// #define IGNORE_FINDS
++
++/* Text mutations */
++
++/* Minimum length of a queue input to be evaluated for "is_ascii"? */
++
++#define AFL_TXT_MIN_LEN 12
++
++/* What is the minimum percentage of ascii characters present to be classifed
++   as "is_ascii"? */
++
++#define AFL_TXT_MIN_PERCENT 94
++
++/* How often to perform ASCII mutations 0 = disable, 1-8 are good values */
++
++#define AFL_TXT_BIAS 6
++
++/* Maximum length of a string to tamper with */
++
++#define AFL_TXT_STRING_MAX_LEN 1024
++
++/* Maximum mutations on a string */
++
++#define AFL_TXT_STRING_MAX_MUTATIONS 6
++
++#endif                                                  /* ! _HAVE_CONFIG_H */
++
++// END GREENHOUSE PATCH TAINT
+diff --git a/include/qemu/log.h b/include/qemu/log.h
+index 9b80660..11c3087 100644
+--- a/include/qemu/log.h
++++ b/include/qemu/log.h
+@@ -1,6 +1,9 @@
+ #ifndef QEMU_LOG_H
+ #define QEMU_LOG_H
+ 
++#define LOG_MAP "/qemu_log_mapping" // GREENHOUSE PATCH
++extern bool hacklog; // GREENHOUSE_PATCH
++
+ /* A small part of this API is split into its own header */
+ #include "qemu/log-for-trace.h"
+ #include "qemu/rcu.h"
+diff --git a/include/tcg/tcg-op.h b/include/tcg/tcg-op.h
+index 5abf17f..99d1454 100644
+--- a/include/tcg/tcg-op.h
++++ b/include/tcg/tcg-op.h
+@@ -29,6 +29,11 @@
+ #include "exec/helper-proto.h"
+ #include "exec/helper-gen.h"
+ 
++void taint_gen_getload1(TCGv addr, int off); // GREENHOUSE PATCH TAINT
++void taint_gen_getload2(TCGv addr, int off); // GREENHOUSE PATCH TAINT
++void taint_gen_getload4(TCGv addr, int off); // GREENHOUSE PATCH TAINT
++void taint_gen_getload8(TCGv addr, int off); // GREENHOUSE PATCH TAINT
++
+ /* Basic output routines.  Not for general consumption.  */
+ 
+ void tcg_gen_op1(TCGOpcode, TCGArg);
+diff --git a/linux-user/main.c b/linux-user/main.c
+index 24d1eb7..72bc9c8 100644
+--- a/linux-user/main.c
++++ b/linux-user/main.c
+@@ -28,6 +28,7 @@
+ 
+ #include "qapi/error.h"
+ #include "qemu.h"
++#include "qemu/log.h" // GREENHOUSE PATCH
+ #include "qemu/path.h"
+ #include "qemu/queue.h"
+ #include "qemu/config-file.h"
+@@ -61,6 +62,14 @@ unsigned long mmap_min_addr;
+ unsigned long guest_base;
+ bool have_guest_base;
+ 
++int program_code_only = 0; // GREENHOUSE PATCH
++bool hackbind = false; // GREENHOUSE PATCH
++bool hackproc = false; // GREENHOUSE PATCH
++bool hacksysinfo = false; // GREENHOUSE PATCH
++bool hookhack    = false; // GREENHOUSE PATCH
++char *qemu_execve_path; // GREENHOUSE PATCH
++
++
+ /*
+  * Used to implement backwards-compatibility for the `-strace`, and
+  * QEMU_STRACE options. Without this, the QEMU_LOG can be overwritten by
+@@ -337,6 +346,44 @@ static void handle_arg_guest_base(const char *arg)
+     have_guest_base = true;
+ }
+ 
++
++// GREENHOUSE PATCH
++static void handle_arg_execve(const char *arg)
++{
++    qemu_execve_path = strdup(arg);
++}
++
++static void handle_arg_hackbind(const char *arg)
++{
++    hackbind = true;
++}
++
++static void handle_arg_hackproc(const char *arg)
++{
++    hackproc = true;
++}
++
++static void handle_arg_hacksysinfo(const char *arg)
++{
++    hacksysinfo = true;
++}
++
++static void handle_arg_pconly(const char *arg)
++{
++    program_code_only = 1;
++}
++
++static void handle_arg_hacklog(const char *arg)
++{
++    hacklog = true;
++}
++
++static void handle_arg_hookhack(const char *arg)
++{
++    hookhack = true;
++}
++// GREENHOUSE PATCH END
++
+ static void handle_arg_reserved_va(const char *arg)
+ {
+     char *p;
+@@ -441,6 +488,20 @@ static const struct qemu_argument arg_table[] = {
+      "address",    "set guest_base address to 'address'"},
+     {"R",          "QEMU_RESERVED_VA", true,  handle_arg_reserved_va,
+      "size",       "reserve 'size' bytes for guest virtual address space"},
++    {"execve",     "QEMU_EXECVE",      true,   handle_arg_execve, // GREENHOUSE PATCH
++     "path",       "use interpreter at 'path' when a process calls execve()"},
++    {"pconly",     "QEMU_PCONLY",      false,   handle_arg_pconly, // GREENHOUSE PATCH
++     "",           "filter non-program code ranges when logging"},
++    {"hackbind",   "QEMU_HACKBIND",    false,   handle_arg_hackbind, // GREENHOUSE PATCH
++     "",           "use hack to get around ipv6 addrs and conflicting binds"},
++    {"hackproc",   "QEMU_HACKPROC",    false,   handle_arg_hackproc, // GREENHOUSE PATCH
++     "",           "use hack to get around needing to mount a writable /proc"},
++    {"hacksysinfo",   "QEMU_HACKSYSINFO",    false,   handle_arg_hacksysinfo, // GREENHOUSE PATCH
++     "",           "use hack to get around sysinfo reporting"},
++    {"hacklog",   "QEMU_HACKLOG",    false,   handle_arg_hacklog, // GREENHOUSE PATCH
++     "",           "enable alternate logging for greenhouse"},
++    {"hookhack",   "QEMU_HOOKHACK",    false,   handle_arg_hookhack,// GREENHOUSE PATCH
++     "",           "use hack to force the target binary to read from stdin"},
+     {"d",          "QEMU_LOG",         true,  handle_arg_log,
+      "item[,...]", "enable logging of specified items "
+      "(use '-d help' for a list of items)"},
+@@ -630,6 +691,7 @@ int main(int argc, char **argv, char **envp)
+     int execfd;
+     int log_mask;
+     unsigned long max_reserved_va;
++    char filter_buf[512]; // GREENHOUSE PATCH
+ 
+     error_init(argv[0]);
+     module_call_init(MODULE_INIT_TRACE);
+@@ -842,6 +904,15 @@ int main(int argc, char **argv, char **envp)
+     syscall_init();
+     signal_init();
+ 
++    // GREENHOUSE PATCH
++    if (program_code_only == 1) {
++        memset(filter_buf, 0, 512);
++        snprintf(filter_buf, 512, "0x%lx..0x%lx", (unsigned long)info->start_code, (unsigned long)info->end_code);
++        // fprintf(stderr, "[qemu] Setting filterbuf: %s\n", filter_buf);
++        qemu_set_dfilter_ranges(filter_buf, &error_fatal);
++    }
++    // END GREENHOUSE PATCH
++
+     /* Now that we've loaded the binary, GUEST_BASE is fixed.  Delay
+        generating the prologue until now so that the prologue can take
+        the real value of GUEST_BASE into account.  */
+diff --git a/linux-user/qemu.h b/linux-user/qemu.h
+index 534753c..ca73467 100644
+--- a/linux-user/qemu.h
++++ b/linux-user/qemu.h
+@@ -16,6 +16,7 @@
+ #include "syscall_defs.h"
+ #include "target_syscall.h"
+ #include "exec/gdbstub.h"
++#include "qemu/log.h" // GREENHOUSE PATCH
+ 
+ /* This is the size of the host kernel's sigset_t, needed where we make
+  * direct system calls that take a sigset_t pointer and a size.
+@@ -163,8 +164,14 @@ extern char *exec_path;
+ void init_task_state(TaskState *ts);
+ void task_settid(TaskState *);
+ void stop_all_tasks(void);
++
+ extern const char *qemu_uname_release;
+ extern unsigned long mmap_min_addr;
++extern char *qemu_execve_path; // GREENHOUSE_PATCH
++extern bool hackbind; // GREENHOUSE_PATCH
++extern bool hackproc; // GREENHOUSE_PATCH
++extern bool hacksysinfo; // GREENHOUSE_PATCH
++extern bool hookhack; // GREENHOUSE_PATCH
+ 
+ /* ??? See if we can avoid exposing so much of the loader internals.  */
+ 
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 27adee9..856c7e3 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -130,6 +130,14 @@
+ #include "fd-trans.h"
+ #include "tcg/tcg.h"
+ 
++#include "qemu/log.h" // GREENHOUSE
++#include "../afl/afl-qemu-taint.h" // GREENHOUSE PATCH TAINT
++
++extern unsigned int afl_forksrv_pid; // GREENHOUSE PATCH TAINT
++int used_ports[512] = {0}; // GREENHOUSE PATCH
++int ports_index = 0; // GREENHOUSE PATCH
++unsigned int hookhack_done = 0; // GREENHOUSE PATCH TAINT
++
+ #ifndef CLONE_IO
+ #define CLONE_IO                0x80000000      /* Clone io context */
+ #endif
+@@ -669,6 +677,33 @@ const char *target_strerror(int err)
+     return strerror(target_to_host_errno(err));
+ }
+ 
++
++// GREENHOUSE PATCH
++static void parse_ghpath(const char* pathname, char* redirected_path) {
++    char* result;
++    char rpath[PATH_MAX+1];
++
++    memset(rpath, 0, PATH_MAX+1);
++    if (hackproc) {
++        result = realpath(pathname, rpath);
++        if (result == NULL) {
++            memset(rpath, 0, PATH_MAX+1);
++            snprintf(rpath, PATH_MAX, "%s", pathname);
++        }
++
++        if (strncmp(rpath, "/proc/", 6) == 0) {
++            snprintf(redirected_path, PATH_MAX, "/ghproc/%s", rpath+6);
++            return;
++        }
++        else if (strncmp(rpath, "/dev/", 5) == 0) {
++            snprintf(redirected_path, PATH_MAX, "/ghdev/%s", rpath+5);
++            return;
++        }
++    }
++    snprintf(redirected_path, PATH_MAX, "%s", pathname);
++}
++// END GREENHOUSE PATCH
++
+ #define safe_syscall0(type, name) \
+ static type safe_##name(void) \
+ { \
+@@ -2284,6 +2319,12 @@ static abi_long do_setsockopt(int sockfd, int level, int optname,
+             }
+             ret = get_errno(setsockopt(sockfd, level, optname,
+                                        &val, sizeof(val)));
++            // GREENHOUSE PATCH
++            if (hackbind && ret != 0) {
++                 fprintf(stderr, "[qemu] Forcing setsockopt to return 0 even in failure cases [setsockopt(%d, %d, %d) = %d]\n", 
++                        sockfd, level, optname, ret);
++                 ret = 0;
++             }
+             break;
+         case IPV6_PKTINFO:
+         {
+@@ -2477,6 +2518,11 @@ set_timeout:
+ 		    optlen = IFNAMSIZ - 1;
+ 		}
+ 		dev_ifname = lock_user(VERIFY_READ, optval_addr, optlen, 1);
++        // GREENHOUSE PATCH */
++        if (dev_ifname) {
++            fprintf(stderr, "[GreenHouseQEMU] BIND_DEVICE: %s\n", dev_ifname);
++        }
++        /* PATCH END */
+ 		if (!dev_ifname) {
+ 		    return -TARGET_EFAULT;
+ 		}
+@@ -3231,6 +3277,14 @@ static abi_long do_socket(int domain, int type, int protocol)
+         return -TARGET_EPROTONOSUPPORT;
+     }
+ 
++
++    // GREENHOUSE PATCH
++    if (hackbind && domain == AF_INET6) {
++        // handle all ipv6 networking as ipv4
++        domain = AF_INET;
++    }
++    // END GREENHOUSE PATCH
++
+     if (domain == AF_PACKET ||
+         (domain == AF_INET && type == SOCK_PACKET)) {
+         protocol = tswap16(protocol);
+@@ -3266,24 +3320,122 @@ static abi_long do_socket(int domain, int type, int protocol)
+ }
+ 
+ /* do_bind() Must return target values and target errnos. */
++// static abi_long do_bind(int sockfd, abi_ulong target_addr,
++//                         socklen_t addrlen)
++// {
++//     void *addr;
++//     abi_long ret;
++
++//     if ((int)addrlen < 0) {
++//         return -TARGET_EINVAL;
++//     }
++
++//     addr = alloca(addrlen+1);
++
++//     ret = target_to_host_sockaddr(sockfd, addr, target_addr, addrlen);
++//     if (ret)
++//         return ret;
++
++//     return get_errno(bind(sockfd, addr, addrlen));
++// }
++
++
++// GREENHOUSE PATCH 
+ static abi_long do_bind(int sockfd, abi_ulong target_addr,
+                         socklen_t addrlen)
+ {
+-    void *addr;
++    void *addr = 0;
++    char ip[INET6_ADDRSTRLEN+1] = "";
++    unsigned short port = 0, newport = 0;
++    unsigned short reuse = 0, retries = 0;
++    void* cust_addr = 0;
+     abi_long ret;
+-
+     if ((int)addrlen < 0) {
+         return -TARGET_EINVAL;
+     }
+ 
+     addr = alloca(addrlen+1);
+-
+     ret = target_to_host_sockaddr(sockfd, addr, target_addr, addrlen);
+-    if (ret)
+-        return ret;
++    if (ret) 
++        return ret;
++
++    // GREENHOUSE PATCH */
++    if (hackbind) {
++        if(((struct sockaddr*)addr)->sa_family == AF_INET) {
++            inet_ntop(AF_INET, &((struct sockaddr_in*)addr)->sin_addr, ip, sizeof(ip));
++            port = ntohs(((struct sockaddr_in*)addr)->sin_port);
++            fprintf(stderr, "[GreenHouseQEMU] IP: %s\n", ip);
++            fprintf(stderr, "[GreenHouseQEMU] PORT: %hu\n", port);
++        }
++        else if (((struct sockaddr*)addr)->sa_family == AF_INET6) {
++            cust_addr = alloca(sizeof(struct sockaddr_in));
++            // GREENHOUSE PATCH */
++            // forces a ipv6 bind address to ipv4
++            port = ntohs(((struct sockaddr_in6*)addr)->sin6_port);
++            memset(((struct sockaddr_in*)cust_addr), 0, sizeof(struct sockaddr_in));
++
++            // ((struct sockaddr*)addr)->sa_family = AF_INET;
++            fprintf(stderr, "[qemu] Using custom bind, forcing ipv6 protocol to ipv4 on addr 0.0.0.0 port %d\n", port);
++            inet_pton(AF_INET, "0.0.0.0", &((struct sockaddr_in*)cust_addr)->sin_addr);
++            inet_ntop(AF_INET, &((struct sockaddr_in*)cust_addr)->sin_addr, ip, sizeof(ip));
++            ((struct sockaddr_in*)cust_addr)->sin_port = htons(port);
++            ((struct sockaddr_in*)cust_addr)->sin_family = AF_INET;
++            addr = cust_addr;
++            addrlen = sizeof(struct sockaddr_in);
++            fprintf(stderr, "[GreenHouseQEMU] IPV6: 0.0.0.0\n");
++            fprintf(stderr, "[GreenHouseQEMU] IPV6_PORT: %hu\n", (unsigned short)ntohs(((struct sockaddr_in*)addr)->sin_port));
++        }
++
++        // GREENHOUSE PATCH */
++        newport = port;
++        retries = 0;
++        while (retries < 3) { // keep trying until we get a successful bind or exceed retries
++            // fprintf(stderr, "[qemu] Trying ip: %s on sockfd %d\n", ip, sockfd);
++    
++            // GREENHOUSE PATCH - create mark only if successful
++            ret = get_errno(bind(sockfd, addr, addrlen));
++            if (!ret) {
++                // create_mark(FIRMFUCK, "bind\n");  
++                fprintf(stderr, "[qemu] Successful Bind %d\n", (int)ret);
++                used_ports[ports_index] = newport;
++                ports_index = ports_index + 1;
++                return ret;
++            }
++            if (newport <= 0) {
++                if (((struct sockaddr*)addr)->sa_family == AF_INET6 || ((struct sockaddr*)addr)->sa_family == AF_INET) {
++                    fprintf(stderr, "[qemu] Forcing port %d to 80 and retrying...", newport);
++                    newport = 80;
++                }
++            }
++            else {
++                newport = newport + 1;
++                while(1) {
++                    reuse = 0;
++                    for (int i = 0; i < ports_index; i++) {
++                        if (newport == used_ports[i]) {
++                            newport = newport + 1;
++                            reuse = 1;
++                            break;
++                        }
++                    }
++                    if(reuse == 0) {
++                        break;
++                    }
++                }
++                fprintf(stderr, "[qemu] bind failed, retrying with port %d\n", newport);
++                retries = retries + 1;
++            }
+ 
+-    return get_errno(bind(sockfd, addr, addrlen));
++            ((struct sockaddr_in*)addr)->sin_port = htons(newport);
++        }
++    }
++    else {
++        ret = get_errno(bind(sockfd, addr, addrlen));
++    }
++
++    return ret;
+ }
++// END GREENHOUSE PATCH
+ 
+ /* do_connect() Must return target values and target errnos. */
+ static abi_long do_connect(int sockfd, abi_ulong target_addr,
+@@ -3305,6 +3457,50 @@ static abi_long do_connect(int sockfd, abi_ulong target_addr,
+     return get_errno(safe_connect(sockfd, addr, addrlen));
+ }
+ 
++
++// GREENHOUSE PATCH
++/* helper function for NR_close, checks if fd is a qemu log descriptor */
++static bool is_qemu_logfile(abi_long fd) {
++    FILE* mapfile;
++    char line[64];
++    abi_long temp_fd;
++    char buf[4096] = {0};
++    int pos = 0;
++    int pid;
++    char* token;
++
++    bool is_logfile = false;
++
++    mapfile = fopen(LOG_MAP, "r");
++    if (hacklog && mapfile == NULL) {
++        fprintf(stderr, "[Greenhouse] ERR - %s does not exist", LOG_MAP);
++        return false;
++    }
++    qemu_flockfile(mapfile);
++
++    while(fgets(line,64,mapfile)) {
++        line[strcspn(line, "\r\n")] = 0;
++        token = strtok(line, ":");
++        pid = atoi(token);
++        token = strtok(NULL, ":");
++        temp_fd = (abi_long)atoi(token);
++        if (temp_fd == fd) {
++            is_logfile = true;
++        }
++        if (kill(pid, 0) >= 0) { // exists
++            pos += sprintf(&buf[pos], "%d:%d\n", pid, (int)temp_fd);
++        }
++    }
++    fclose(mapfile);
++    mapfile = fopen(LOG_MAP, "w");
++    fprintf(mapfile, "%s", buf);
++    fclose(mapfile);
++    qemu_funlockfile(mapfile);
++    return is_logfile;
++}
++// END GREENHOUSE PATCH
++
++
+ /* do_sendrecvmsg_locked() Must return target values and target errnos. */
+ static abi_long do_sendrecvmsg_locked(int fd, struct target_msghdr *msgp,
+                                       int flags, int send)
+@@ -3512,6 +3708,27 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
+             ret = -TARGET_EFAULT;
+         }
+     }
++
++    // GREENHOUSE PATCH TAINT
++	if(hookhack && hookhack_done == 0 && ret > 0) {
++        fprintf(stderr, "[HOOK] accept hooked!\n");
++        if (ret < 0) {
++            fprintf(stderr, "[HOOK] failed!\n");
++            return ret;
++        }
++        if (!TAINT_func_fd_is_tainted(ret)) {
++            printf("[HOOK] ret fd: %d\n", ret);
++
++            if (fd >= 0 && TAINT_var_taint_open) {
++                if (TAINT_var_debug)
++                    fprintf(stderr, "[CHECK] SYSCALL do_accept4 %s\n", "/taint");
++                TAINT_func_fd_follow(ret);
++            }
++            return ret;
++        }
++	}
++    // END GREENHOUSE PATCH TAINT
++
+     return ret;
+ }
+ 
+@@ -3648,10 +3865,35 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+     void *addr;
+     void *host_msg;
+     abi_long ret;
++    ssize_t TAINT_res;
+ 
+     host_msg = lock_user(VERIFY_WRITE, msg, len, 0);
+     if (!host_msg)
+         return -TARGET_EFAULT;
++
++    // GREENHOUSE PATCH TAINT
++	if(hookhack) {
++        if (fd > 0) {
++            fprintf(stderr, "[HOOK] fd: %d len: %ld!\n", fd, len);
++            abi_long ret = (abi_long) read(fd, host_msg, len);
++            unlock_user(host_msg, msg, len);
++
++            TAINT_res = get_errno(ret);
++            if (TAINT_res > 0 && TAINT_func_fd_is_tainted(fd)) {
++              if (TAINT_var_debug) 
++                fprintf(stderr, " SYSCALL recvfrom fd:%d buf:0x%lx len:%lu -> %ld read\n", fd, (unsigned long int)msg, (size_t)len, (ssize_t)ret);
++              TAINT_func_mem_add((unsigned long int)msg, ret, TAINT_func_offset_get(fd));
++              TAINT_func_offset_add(fd, ret);
++            }
++
++            return ret;
++        } {
++            fprintf(stderr, "[HOOK] error! len: %ld\n", len);
++            return -TARGET_EINVAL;
++        }
++	}
++    // END GREENHOUSE PATCH TAINT
++
+     if (target_addr) {
+         if (get_user_u32(addrlen, target_addrlen)) {
+             ret = -TARGET_EFAULT;
+@@ -7060,6 +7302,8 @@ static inline abi_long target_truncate64(void *cpu_env, const char *arg1,
+         arg2 = arg3;
+         arg3 = arg4;
+     }
++    if (TAINT_var_taint_open && target_offset64(arg2, arg3) == 0 && TAINT_func_filename_match((char *)arg1, -1)) // GREENHOUSE PATCH TAINT
++        TAINT_var_taint_open = 0; // GREENHOUSE PATCH TAINT
+     return get_errno(truncate64(arg1, target_offset64(arg2, arg3)));
+ }
+ #endif
+@@ -7074,6 +7318,8 @@ static inline abi_long target_ftruncate64(void *cpu_env, abi_long arg1,
+         arg2 = arg3;
+         arg3 = arg4;
+     }
++    if (TAINT_var_taint_open && target_offset64(arg2, arg3) == 0 && TAINT_func_filename_match((char *)arg1, -1)) // GREENHOUSE PATCH TAINT
++        TAINT_var_taint_open = 0; // GREENHOUSE PATCH TAINT
+     return get_errno(ftruncate64(arg1, target_offset64(arg2, arg3)));
+ }
+ #endif
+@@ -7772,7 +8018,9 @@ static int open_self_cmdline(void *cpu_env, int fd)
+     return 0;
+ }
+ 
+-static int open_self_maps(void *cpu_env, int fd)
++
++int open_self_maps(void *cpu_env, int fd); // GREENHOUSE_PATCH TAINT
++int open_self_maps(void *cpu_env, int fd)
+ {
+     CPUState *cpu = env_cpu((CPUArchState *)cpu_env);
+     TaskState *ts = cpu->opaque;
+@@ -8026,6 +8274,15 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
+         { NULL, NULL, NULL }
+     };
+ 
++    // GREENHOUSE PATCH
++    char redirected_path[PATH_MAX+1];
++    int ret = 0;
++    memset(redirected_path, 0, sizeof(redirected_path));
++
++    parse_ghpath(pathname, redirected_path);
++    pathname = redirected_path;
++    // END GREENHOUSE PATCH
++
+     if (is_proc_myself(pathname, "exe")) {
+         int execfd = qemu_getauxval(AT_EXECFD);
+         return execfd ? execfd : safe_openat(dirfd, exec_path, flags, mode);
+@@ -8064,7 +8321,20 @@ static int do_openat(void *cpu_env, int dirfd, const char *pathname, int flags,
+         return fd;
+     }
+ 
+-    return safe_openat(dirfd, path(pathname), flags, mode);
++    ret = safe_openat(dirfd, path(pathname), flags, mode); // GREENHOUSE PATCH TAINT
++
++     // GREENHOUSE PATCH TAINT
++    if (ret >= 0 && TAINT_var_taint_open) {
++      if (TAINT_var_debug) fprintf(stderr, "[CHECK] SYSCALL openat %s\n", (char*)path(pathname));
++      if (TAINT_func_filename_match((char*)path(pathname), dirfd)) {
++        if ((mode & O_TRUNC) == 0)
++          TAINT_func_fd_follow(ret);
++        else
++          TAINT_var_taint_open = 0;
++      }
++    }
++     // END GREENHOUSE PATCH TAINT
++    return ret; // GREENHOUSE PATCH TAINT
+ }
+ 
+ #define TIMER_MAGIC 0x0caf0000
+@@ -8155,6 +8425,164 @@ static int host_to_target_cpu_mask(const unsigned long *host_mask,
+     return 0;
+ }
+ 
++
++#define BINPRM_BUF_SIZE 128 // GREENHOUSE_PATCH
++
++// GREENHOUSE_PATCH
++/* qemu_execve() Must return target values and target errnos. */
++static abi_long qemu_execve(char *filename, char *argv[],
++                  char *envp[])
++{
++    char *i_arg = NULL, *i_name = NULL;
++    char **new_argp;
++    int argc, fd, ret, i, offset = 3;
++    int tokCount = 0;
++    int trace_count = 0;
++    char *cp;
++    char *token;
++    char *qemu_path_tokens;
++    char *qemu_path;
++    char buf[BINPRM_BUF_SIZE];
++    char tBuf[100];
++
++    fprintf(stderr, "[qemu] doing qemu_execven on filename %s\n", filename);
++    memset(buf, 0, BINPRM_BUF_SIZE);
++
++
++    for (argc = 0; argv[argc] != NULL; argc++) {
++        /* nothing */ ;
++        // fprintf(stderr, "   - arg %s\n", argv[argc]);
++    }
++
++    fd = open(filename, O_RDONLY);
++    if (fd == -1) {
++        // fprintf(stderr, "   - ERR1 %d\n", -ENOENT);
++        return -ENOENT;
++    }
++
++    ret = read(fd, buf, BINPRM_BUF_SIZE);
++    if (ret == -1) {
++        close(fd);
++        // fprintf(stderr, "   - ERR2 %d\n", -ENOENT);
++        return -ENOENT;
++    }
++
++    close(fd);
++
++    /* adapted from the kernel
++     * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/fs/binfmt_script.c
++     */
++    if ((buf[0] == '#') && (buf[1] == '!')) {
++        /*
++         * This section does the #! interpretation.
++         * Sorta complicated, but hopefully it will work.  -TYT
++         */
++
++        buf[BINPRM_BUF_SIZE - 1] = '\0';
++        cp = strchr(buf, '\n');
++        if (cp == NULL) {
++            cp = buf+BINPRM_BUF_SIZE-1;
++        }
++        *cp = '\0';
++        while (cp > buf) {
++            cp--;
++            if ((*cp == ' ') || (*cp == '\t')) {
++                *cp = '\0';
++            } else {
++                break;
++            }
++        }
++        for (cp = buf+2; (*cp == ' ') || (*cp == '\t'); cp++) {
++            /* nothing */ ;
++        }
++        if (*cp == '\0') {
++            return -ENOEXEC; /* No interpreter name found */
++        }
++        i_name = cp;
++        i_arg = NULL;
++        for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++) {
++            /* nothing */ ;
++        }
++        while ((*cp == ' ') || (*cp == '\t')) {
++            *cp++ = '\0';
++        }
++        if (*cp) {
++            i_arg = cp;
++        }
++
++        if (i_arg) {
++            offset = 5;
++        } else {
++            offset = 4;
++        }
++    }
++
++    qemu_path_tokens = strdup(qemu_execve_path);
++    token = strtok(qemu_path_tokens, " ");
++    qemu_path = strdup(token);
++    token = strtok(NULL, " ");
++    while (token != NULL) {
++        token = strtok(NULL, " ");
++        tokCount += 1;
++    }
++    offset += 2 + tokCount;
++
++    new_argp = alloca((argc + offset + 1) * sizeof(void *));
++    /* Copy the original arguments with offset */
++    for (i = 0; i < argc; i++) {
++        new_argp[i + offset] = strdup(argv[i]);
++    }
++
++    new_argp[0] = strdup(qemu_path);
++    new_argp[1] = strdup("-0");
++
++    if (i_name) {
++        new_argp[2] = i_name;
++        offset -= 1; // iname is 2nd and 2nd last arg
++
++    } else {
++        new_argp[2] = argv[0];
++    }
++
++
++    qemu_path_tokens = strdup(qemu_execve_path);
++    token = strtok(qemu_path_tokens, " ");
++    while (tokCount > 0 && token != NULL) {
++        token = strtok(NULL, " ");
++        if(strstr(token, "trace.log") != NULL) {
++            do {
++            trace_count += 1;
++            memset(tBuf, 0, 100);
++            snprintf(tBuf, 90, "%s%d", token, trace_count);
++            } while( access( tBuf, F_OK ) == 0 );
++            new_argp[offset - 2 - tokCount] = strdup(tBuf);
++        }
++        else {
++            new_argp[offset - 2 - tokCount] = strdup(token);
++        }
++        tokCount -= 1;
++    }
++
++    new_argp[offset - 2] = strdup("-execve");
++    new_argp[offset - 1] = strdup(qemu_execve_path);
++
++    if (i_name) {
++        offset += 1; // iname is 2nd and 2nd last arg
++        new_argp[offset - 1] = i_name;
++
++        if (i_arg) {
++            new_argp[offset - 2] = i_name;
++            new_argp[offset - 1] = i_arg;
++        }
++    }
++
++    new_argp[offset] = filename;
++    new_argp[argc + offset] = NULL;
++
++    return get_errno(execve(qemu_path, new_argp, envp));
++}
++// END GREENHOUSE_PATCH 
++
+ /* This is an internal helper for do_syscall so that it is easier
+  * to have a single return point, so that actions, such as logging
+  * of syscall results, can be performed.
+@@ -8167,6 +8595,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+ {
+     CPUState *cpu = env_cpu(cpu_env);
+     abi_long ret;
++    ssize_t TAINT_res; // GREENHOUSE PATCH TAINT
+ #if defined(TARGET_NR_stat) || defined(TARGET_NR_stat64) \
+     || defined(TARGET_NR_lstat) || defined(TARGET_NR_lstat64) \
+     || defined(TARGET_NR_fstat) || defined(TARGET_NR_fstat64) \
+@@ -8186,6 +8615,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+            and _exit_group is used for application termination.
+            Do thread termination if we have more then one thread.  */
+ 
++        TAINT_func_end(); // GREENHOUSE PATCH TAINT
+         if (block_signals()) {
+             return -TARGET_ERESTARTSYS;
+         }
+@@ -8226,7 +8656,20 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         } else {
+             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                 return -TARGET_EFAULT;
+-            ret = get_errno(safe_read(arg1, p, arg3));
++
++            // GREENHOUSE PATCH TAINT
++            TAINT_res = get_errno(safe_read(arg1, p, arg3));
++            ret = get_errno(TAINT_res);
++            if (TAINT_res > 0 && TAINT_func_fd_is_tainted(arg1)) {
++              if (TAINT_var_debug) {
++                fprintf(stderr, " SYSCALL read fd:%d buf:0x%lx len:%lu -> %ld read\n", arg1, 
++                    (unsigned long int)p, (size_t)arg3, (ssize_t)ret);
++              }
++              TAINT_func_mem_add((unsigned long int)p, ret, TAINT_func_offset_get(arg1));
++              TAINT_func_offset_add(arg1, ret);
++            }
++            // END GREENHOUSE PATCH TAINT
++
+             if (ret >= 0 &&
+                 fd_trans_host_to_target_data(arg1)) {
+                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
+@@ -8286,6 +8729,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         return ret;
+ #endif
+     case TARGET_NR_close:
++        TAINT_func_fd_unfollow(arg1); // GREENHOUSE PATCH TAINT
++        // GREENHOUSE PATCH  disable closing for select logging files
++        if (hacklog && is_qemu_logfile(arg1)) {
++            fprintf(stderr, "[qemu] not closing %d\n", (int)arg1);
++            return -1;
++        }
++        // END GREENHOUSE PATCH
+         fd_trans_unregister(arg1);
+         return get_errno(close(arg1));
+ 
+@@ -8367,6 +8817,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         if (!(p = lock_user_string(arg1)))
+             return -TARGET_EFAULT;
+         ret = get_errno(unlink(p));
++        if (TAINT_var_taint_open && TAINT_func_filename_match(p, -1)) // GREENHOUSE PATCH TAINT
++            TAINT_var_taint_open = 0; // GREENHOUSE PATCH TAINT
+         unlock_user(p, arg1, 0);
+         return ret;
+ #endif
+@@ -8375,6 +8827,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         if (!(p = lock_user_string(arg2)))
+             return -TARGET_EFAULT;
+         ret = get_errno(unlinkat(arg1, p, arg3));
++        if (TAINT_var_taint_open && TAINT_func_filename_match(p, arg1)) // GREENHOUSE PATCH TAINT
++            TAINT_var_taint_open = 0; // GREENHOUSE PATCH TAINT
+         unlock_user(p, arg2, 0);
+         return ret;
+ #endif
+@@ -8448,6 +8902,12 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+              * program's problem.
+              */
+             ret = get_errno(safe_execve(p, argp, envp));
++            if (qemu_execve_path && *qemu_execve_path) {       // GREENHOUSE PATCH
++                ret = get_errno(qemu_execve(p, argp, envp));   // GREENHOUSE PATCH
++            } else {                                           // GREENHOUSE PATCH
++                ret = get_errno(safe_execve(p, argp, envp));   // GREENHOUSE PATCH
++            }   
++            
+             unlock_user(p, arg1, 0);
+ 
+             goto execve_end;
+@@ -8518,8 +8978,14 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         return ret;
+ #endif
+ #ifdef TARGET_NR_lseek
+-    case TARGET_NR_lseek:
+-        return get_errno(lseek(arg1, arg2, arg3));
++    // GREENHOUSE PATCH TAINT
++    case TARGET_NR_lseek: {
++        ssize_t ret = lseek(arg1, arg2, arg3);
++        TAINT_func_offset_set(arg1, ret);
++        return get_errno(ret);
++        // return get_errno(lseek(arg1, arg2, arg3));
++    }
++    // END GREENHOUSE PATCH TAINT
+ #endif
+ #if defined(TARGET_NR_getxpid) && defined(TARGET_ALPHA)
+     /* Alpha specific */
+@@ -8788,6 +9254,10 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+     case TARGET_NR_dup:
+         ret = get_errno(dup(arg1));
+         if (ret >= 0) {
++            if (TAINT_func_fd_is_tainted(arg1)) { // GREENHOUSE PATCH TAINT
++              TAINT_func_fd_follow(ret);  // GREENHOUSE PATCH TAINT
++              TAINT_func_offset_set(ret, TAINT_func_offset_get(arg1)); // GREENHOUSE PATCH TAINT
++            }  // GREENHOUSE PATCH TAINT
+             fd_trans_dup(arg1, ret);
+         }
+         return ret;
+@@ -8857,6 +9327,10 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+     case TARGET_NR_dup2:
+         ret = get_errno(dup2(arg1, arg2));
+         if (ret >= 0) {
++            if (TAINT_func_fd_is_tainted(arg1)) { // GREENHOUSE PATCH TAINT
++              TAINT_func_fd_follow(arg2); // GREENHOUSE PATCH TAINT
++              TAINT_func_offset_set(arg2, TAINT_func_offset_get(arg1)); // GREENHOUSE PATCH TAINT
++            } // GREENHOUSE PATCH TAINT
+             fd_trans_dup(arg1, arg2);
+         }
+         return ret;
+@@ -8872,6 +9346,10 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         host_flags = target_to_host_bitmask(arg3, fcntl_flags_tbl);
+         ret = get_errno(dup3(arg1, arg2, host_flags));
+         if (ret >= 0) {
++            if (TAINT_func_fd_is_tainted(arg1)) { // GREENHOUSE PATCH TAINT
++              TAINT_func_fd_follow(arg2); // GREENHOUSE PATCH TAINT
++              TAINT_func_offset_set(arg2, TAINT_func_offset_get(arg1)); // GREENHOUSE PATCH TAINT
++            } // GREENHOUSE PATCH TAINT
+             fd_trans_dup(arg1, arg2);
+         }
+         return ret;
+@@ -9627,12 +10105,23 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+             ret = get_errno(target_mmap(v1, v2, v3,
+                                         target_to_host_bitmask(v4, mmap_flags_tbl),
+                                         v5, v6));
++            if ((size_t)ret != -1 && TAINT_func_fd_is_tainted(v5)) { // GREENHOUSE PATCH TAINT
++                if (TAINT_var_debug)  // GREENHOUSE PATCH TAINT
++                    fprintf(stderr, " SYSCALL mmap fd:%ld buf:0x%lx len:%lu offset:%lu\n", v5, ret, v2, v6); // GREENHOUSE PATCH TAINT
++                TAINT_func_mem_add(ret, v2, v6); // GREENHOUSE PATCH TAINT
++            }
+         }
+ #else
+         ret = get_errno(target_mmap(arg1, arg2, arg3,
+                                     target_to_host_bitmask(arg4, mmap_flags_tbl),
+                                     arg5,
+                                     arg6));
++
++        if ((size_t)ret != -1 && TAINT_func_fd_is_tainted(arg5)) { // GREENHOUSE PATCH TAINT
++          if (TAINT_var_debug) 
++            fprintf(stderr, " SYSCALL mmap fd:%ld buf:0x%lx len:%lu offset:%lu\n", arg5, ret, arg2, arg6); // GREENHOUSE PATCH TAINT
++          TAINT_func_mem_add(ret, arg2, arg6); // GREENHOUSE PATCH TAINT
++        } // GREENHOUSE PATCH TAINT
+ #endif
+         return ret;
+ #endif
+@@ -9644,9 +10133,14 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         ret = target_mmap(arg1, arg2, arg3,
+                           target_to_host_bitmask(arg4, mmap_flags_tbl),
+                           arg5, arg6 << MMAP_SHIFT);
++        if ((size_t)ret != -1 && TAINT_func_fd_is_tainted(arg5)) { // GREENHOUSE PATCH TAINT
++          if (TAINT_var_debug) fprintf(stderr, " SYSCALL mmap fd:%d buf:0x%x len:%d offset:%d\n", arg5, ret, arg2, arg6); // GREENHOUSE PATCH TAINT
++          TAINT_func_mem_add(ret, arg2, arg6); // GREENHOUSE PATCH TAINT
++        } // GREENHOUSE PATCH TAINT
+         return get_errno(ret);
+ #endif
+     case TARGET_NR_munmap:
++        TAINT_func_mem_remove(arg1, arg2); // GREENHOUSE PATCH TAINT
+         return get_errno(target_munmap(arg1, arg2));
+     case TARGET_NR_mprotect:
+         {
+@@ -9663,7 +10157,14 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         return get_errno(target_mprotect(arg1, arg2, arg3));
+ #ifdef TARGET_NR_mremap
+     case TARGET_NR_mremap:
+-        return get_errno(target_mremap(arg1, arg2, arg3, arg4, arg5));
++        // GREENHOUSE PATCH TAINT
++        /* mremap new_addr (arg5) is always untagged */
++        ret = target_mremap(arg1, arg2, arg3, arg4, arg5);
++        if ((ssize_t) ret != -1)
++          TAINT_func_mem_move(arg1, arg2, ret, arg3);
++        return get_errno(ret);
++        // return get_errno(target_mremap(arg1, arg2, arg3, arg4, arg5));
++        // END GREENHOUSE PATCH TAINT
+ #endif
+         /* ??? msync/mlock/munlock are broken for softmmu.  */
+ #ifdef TARGET_NR_msync
+@@ -9690,12 +10191,15 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+     case TARGET_NR_truncate:
+         if (!(p = lock_user_string(arg1)))
+             return -TARGET_EFAULT;
++        if (TAINT_var_taint_open && arg2 == 0 && TAINT_func_filename_match(p, -1)) // GREENHOUSE PATCH TAINT
++            TAINT_var_taint_open = 0; // GREENHOUSE PATCH TAINT
+         ret = get_errno(truncate(p, arg2));
+         unlock_user(p, arg1, 0);
+         return ret;
+ #endif
+ #ifdef TARGET_NR_ftruncate
+     case TARGET_NR_ftruncate:
++        if (arg2 == 0) TAINT_func_fd_unfollow(arg1); //  GREENHOUSE PATCH TAINT
+         return get_errno(ftruncate(arg1, arg2));
+ #endif
+     case TARGET_NR_fchmod:
+@@ -10084,9 +10588,18 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+                 if (!lock_user_struct(VERIFY_WRITE, target_value, arg1, 0))
+                     return -TARGET_EFAULT;
+                 __put_user(value.uptime, &target_value->uptime);
+-                __put_user(value.loads[0], &target_value->loads[0]);
+-                __put_user(value.loads[1], &target_value->loads[1]);
+-                __put_user(value.loads[2], &target_value->loads[2]);
++                // GREENHOUSE PATCH
++                if (hacksysinfo) {
++                    __put_user(0, &target_value->loads[0]);
++                    __put_user(0, &target_value->loads[1]);
++                    __put_user(0, &target_value->loads[2]);
++                }
++                else {
++                    __put_user(value.loads[0], &target_value->loads[0]);
++                    __put_user(value.loads[1], &target_value->loads[1]);
++                    __put_user(value.loads[2], &target_value->loads[2]);
++                }
++                // END GREENHOUSE PATCH
+                 __put_user(value.totalram, &target_value->totalram);
+                 __put_user(value.freeram, &target_value->freeram);
+                 __put_user(value.sharedram, &target_value->sharedram);
+@@ -10179,6 +10692,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+ #ifdef __NR_exit_group
+         /* new thread calls */
+     case TARGET_NR_exit_group:
++        TAINT_func_end(); // GREENHOUSE PATCH TAINT
+         preexit_cleanup(cpu_env, arg1);
+         return get_errno(exit_group(arg1));
+ #endif
+@@ -10282,10 +10796,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+             if (res == -1) {
+                 ret = get_errno(res);
+             } else {
++                TAINT_func_offset_set(arg1, res); // GREENHOUSE PATCH TAINT
+                 ret = 0;
+             }
+ #else
++            int64_t res; // GREENHOUSE PATCH TAINT
+             ret = get_errno(_llseek(arg1, arg2, arg3, &res, arg5));
++            TAINT_func_offset_set(arg1, res); // GREENHOUSE PATCH TAINT
+ #endif
+             if ((ret == 0) && put_user_s64(res, arg4)) {
+                 return -TARGET_EFAULT;
+@@ -10475,12 +10992,39 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+     case TARGET_NR_readv:
+         {
+             struct iovec *vec = lock_iovec(VERIFY_WRITE, arg2, arg3, 0);
++            // GREENHOUSE PATCH TAINT
++            // if (vec != NULL) {
++            //     ret = get_errno(safe_readv(arg1, vec, arg3));
++            //     unlock_iovec(vec, arg2, arg3, 1);
++            // } else {
++            //     ret = -host_to_target_errno(errno);
++            // }
+             if (vec != NULL) {
+-                ret = get_errno(safe_readv(arg1, vec, arg3));
++                ret = safe_readv(arg1, vec, arg3);
++                if ((ssize_t)ret > 0 && TAINT_func_fd_is_tainted(arg1)) {
++                  int cnt = 0;
++                  ssize_t rest = ret, add;
++                  while (cnt < arg3 && rest > 0) {
++                    struct iovec *iov = (struct iovec*)arg2 + cnt;
++                    if (rest > iov->iov_len) {
++                      add = iov->iov_len;
++                      rest -= add;
++                    } else {
++                      add = rest;
++                      rest = 0;
++                    }
++                    if (TAINT_var_debug) fprintf(stderr, " SYSCALL readv %u/%d fd:%d buf:0x%lx len:%lu offset:%lu\n", cnt + 1, arg3, arg1, (unsigned long int)iov->iov_base, add, TAINT_func_offset_get(arg1));
++                    TAINT_func_mem_add((unsigned long)iov->iov_base, add, TAINT_func_offset_get(arg1));
++                    TAINT_func_offset_add(arg1, add);
++                    cnt++;
++                  }
++                }
+                 unlock_iovec(vec, arg2, arg3, 1);
++                ret = get_errno(ret);
+             } else {
+                 ret = -host_to_target_errno(errno);
+             }
++            // END GREENHOUSE PATCH TAINT
+         }
+         return ret;
+     case TARGET_NR_writev:
+@@ -10503,6 +11047,25 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+ 
+                 target_to_host_low_high(arg4, arg5, &low, &high);
+                 ret = get_errno(safe_preadv(arg1, vec, arg3, low, high));
++                // GREENHOUSE PATCH
++                if ((ssize_t)ret > 0 && TAINT_func_fd_is_tainted(arg1)) {
++                  int cnt = 0;
++                  ssize_t rest = ret, add;
++                  while (cnt < arg3 && rest > 0) {
++                    struct iovec *iov = (struct iovec*)arg2 + cnt;
++                    if (rest > iov->iov_len) {
++                      add = iov->iov_len;
++                      rest -= add;
++                    } else {
++                      add = rest;
++                      rest = 0;
++                    }
++                    if (TAINT_var_debug) fprintf(stderr, " SYSCALL preadv %u/%d fd:%d buf:0x%lx len:%lu offset:%lu\n", cnt + 1, arg3, arg1, (unsigned long int)iov->iov_base, add, low);
++                    TAINT_func_mem_add((unsigned long int)iov->iov_base, add, low);
++                    cnt++;
++                  }
++                }
++                // END GREENHOUSE PATCH
+                 unlock_iovec(vec, arg2, arg3, 1);
+             } else {
+                 ret = -host_to_target_errno(errno);
+@@ -11051,6 +11614,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+         }
+         ret = get_errno(sendfile(arg1, arg2, offp, arg4));
+         if (!is_error(ret) && arg3) {
++            if (TAINT_func_fd_is_tainted(arg2)) // GREENHOUSE PATCH TAINT
++                fprintf(stderr, " WARNING SYSCALL sendfile() with tainted source file descriptor at offset %lx and length %d!\n", off, arg4); // GREENHOUSE PATCH TAINT
+             abi_long ret2 = put_user_sal(off, arg3);
+             if (is_error(ret2)) {
+                 ret = ret2;
+@@ -11115,6 +11680,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+ #endif
+ #ifdef TARGET_NR_ftruncate64
+     case TARGET_NR_ftruncate64:
++        if (arg4 == 0) TAINT_func_fd_unfollow(arg1); // GREENHOUSE PATCH TAINT ignore if len > 0
+         return target_ftruncate64(cpu_env, arg1, arg2, arg3, arg4);
+ #endif
+ #ifdef TARGET_NR_stat64
+@@ -13072,6 +13638,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+     return ret;
+ }
+ 
++
+ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+                     abi_long arg2, abi_long arg3, abi_long arg4,
+                     abi_long arg5, abi_long arg6, abi_long arg7,
+diff --git a/tcg/tcg-op.c b/tcg/tcg-op.c
+index 4b8a473..493d8fd 100644
+--- a/tcg/tcg-op.c
++++ b/tcg/tcg-op.c
+@@ -32,6 +32,23 @@
+ #include "trace/mem.h"
+ #include "exec/plugin-gen.h"
+ 
++#include "../afl/afl-qemu-taint.h" // GREENHOUSE PATCH TAINT
++#include "../afl/afl-qemu-taint-inl.h" // GREENHOUSE PATCH TAINT
++#include "../qemu.h" // GREENHOUSE PATCH TAINT
++
++
++// GREENHOUSE PATCH TAINT
++#define GEN_TAINT_OP(OP) \
++void taint_gen_##OP(TCGv addr, int off) { \
++  gen_helper_taint_##OP(cpu_env, addr); \
++}
++
++GEN_TAINT_OP(getload1)
++GEN_TAINT_OP(getload2)
++GEN_TAINT_OP(getload4)
++GEN_TAINT_OP(getload8)
++// END GREENHOUSE PATCH TAINT
++
+ /* Reduce the number of ifdefs below.  This assumes that all uses of
+    TCGV_HIGH and TCGV_LOW are properly protected by a conditional that
+    the compiler can eliminate.  */
+@@ -2837,6 +2854,16 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
+ 
+     addr = plugin_prep_mem_callbacks(addr);
+     gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
++
++    if (hookhack) {
++        switch(memop & 3) {
++        case 0: taint_gen_getload1(addr, idx); break;
++        case 1: taint_gen_getload2(addr, idx); break;
++        case 2: taint_gen_getload4(addr, idx); break;
++        case 3: taint_gen_getload8(addr, idx); break;
++        }
++    }
++
+     plugin_gen_mem_callbacks(addr, info);
+ 
+     if ((orig_memop ^ memop) & MO_BSWAP) {
+@@ -2922,6 +2949,14 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
+ 
+     addr = plugin_prep_mem_callbacks(addr);
+     gen_ldst_i64(INDEX_op_qemu_ld_i64, val, addr, memop, idx);
++    // GREENHOUSE PATCH TAINT
++    switch(memop & 3) {
++      case 0: taint_gen_getload1(addr, idx); break;
++      case 1: taint_gen_getload2(addr, idx); break;
++      case 2: taint_gen_getload4(addr, idx); break;
++      case 3: taint_gen_getload8(addr, idx); break;
++    }
++    // END GREENHOUSE PATCH TAINT
+     plugin_gen_mem_callbacks(addr, info);
+ 
+     if ((orig_memop ^ memop) & MO_BSWAP) {
+diff --git a/types.h b/types.h
+new file mode 100644
+index 0000000..a4544db
+--- /dev/null
++++ b/types.h
+@@ -0,0 +1,159 @@
++/*
++   american fuzzy lop++ - type definitions and minor macros
++   --------------------------------------------------------
++
++   Originally written by Michal Zalewski
++
++   Now maintained by Marc Heuse <mh@mh-sec.de>,
++                     Heiko Eißfeldt <heiko.eissfeldt@hexco.de>,
++                     Andrea Fioraldi <andreafioraldi@gmail.com>,
++                     Dominik Maier <mail@dmnk.co>
++
++   Copyright 2016, 2017 Google Inc. All rights reserved.
++   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at:
++
++     http://www.apache.org/licenses/LICENSE-2.0
++
++ */
++
++// GREENHOUSE PATCH TAINT
++#ifndef _HAVE_TYPES_H
++#define _HAVE_TYPES_H
++
++#include <stdint.h>
++#include <stdlib.h>
++
++typedef uint8_t  u8;
++typedef uint16_t u16;
++typedef uint32_t u32;
++
++/* Extended forkserver option values */
++
++/* Reporting errors */
++#define FS_OPT_ERROR 0xf800008f
++#define FS_OPT_GET_ERROR(x) ((x & 0x00ffff00) >> 8)
++#define FS_OPT_SET_ERROR(x) ((x & 0x0000ffff) << 8)
++#define FS_ERROR_MAP_SIZE 1
++#define FS_ERROR_MAP_ADDR 2
++#define FS_ERROR_SHM_OPEN 4
++#define FS_ERROR_SHMAT 8
++#define FS_ERROR_MMAP 16
++
++/* Reporting options */
++#define FS_OPT_ENABLED 0x80000001
++#define FS_OPT_MAPSIZE 0x40000000
++#define FS_OPT_SNAPSHOT 0x20000000
++#define FS_OPT_AUTODICT 0x10000000
++#define FS_OPT_SHDMEM_FUZZ 0x01000000
++#define FS_OPT_OLD_AFLPP_WORKAROUND 0x0f000000
++// FS_OPT_MAX_MAPSIZE is 8388608 = 0x800000 = 2^23 = 1 << 22
++#define FS_OPT_MAX_MAPSIZE ((0x00fffffe >> 1) + 1)
++#define FS_OPT_GET_MAPSIZE(x) (((x & 0x00fffffe) >> 1) + 1)
++#define FS_OPT_SET_MAPSIZE(x) \
++  (x <= 1 || x > FS_OPT_MAX_MAPSIZE ? 0 : ((x - 1) << 1))
++
++typedef unsigned long long u64;
++
++typedef int8_t  s8;
++typedef int16_t s16;
++typedef int32_t s32;
++typedef int64_t s64;
++
++#ifndef MIN
++  #define MIN(a, b)           \
++    ({                        \
++                              \
++      __typeof__(a) _a = (a); \
++      __typeof__(b) _b = (b); \
++      _a < _b ? _a : _b;      \
++                              \
++    })
++
++  #define MAX(a, b)           \
++    ({                        \
++                              \
++      __typeof__(a) _a = (a); \
++      __typeof__(b) _b = (b); \
++      _a > _b ? _a : _b;      \
++                              \
++    })
++
++#endif                                                              /* !MIN */
++
++#define SWAP16(_x)                    \
++  ({                                  \
++                                      \
++    u16 _ret = (_x);                  \
++    (u16)((_ret << 8) | (_ret >> 8)); \
++                                      \
++  })
++
++#define SWAP32(_x)                                                   \
++  ({                                                                 \
++                                                                     \
++    u32 _ret = (_x);                                                 \
++    (u32)((_ret << 24) | (_ret >> 24) | ((_ret << 8) & 0x00FF0000) | \
++          ((_ret >> 8) & 0x0000FF00));                               \
++                                                                     \
++  })
++
++#define SWAP64(_x)                                                             \
++  ({                                                                           \
++                                                                               \
++    u64 _ret = (_x);                                                           \
++    _ret =                                                                     \
++        (_ret & 0x00000000FFFFFFFF) << 32 | (_ret & 0xFFFFFFFF00000000) >> 32; \
++    _ret =                                                                     \
++        (_ret & 0x0000FFFF0000FFFF) << 16 | (_ret & 0xFFFF0000FFFF0000) >> 16; \
++    _ret =                                                                     \
++        (_ret & 0x00FF00FF00FF00FF) << 8 | (_ret & 0xFF00FF00FF00FF00) >> 8;   \
++    _ret;                                                                      \
++                                                                               \
++  })
++
++#ifdef AFL_LLVM_PASS
++  #if defined(__linux__) || !defined(__ANDROID__)
++    #define AFL_SR(s) (srandom(s))
++    #define AFL_R(x) (random() % (x))
++  #else
++    #define AFL_SR(s) ((void)s)
++    #define AFL_R(x) (arc4random_uniform(x))
++  #endif
++#else
++  #if defined(__linux__) || !defined(__ANDROID__)
++    #define SR(s) (srandom(s))
++    #define R(x) (random() % (x))
++  #else
++    #define SR(s) ((void)s)
++    #define R(x) (arc4random_uniform(x))
++  #endif
++#endif                                                    /* ^AFL_LLVM_PASS */
++
++#define STRINGIFY_INTERNAL(x) #x
++#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
++
++#define MEM_BARRIER() __asm__ volatile("" ::: "memory")
++
++#if __GNUC__ < 6
++  #ifndef likely
++    #define likely(_x) (_x)
++  #endif
++  #ifndef unlikely
++    #define unlikely(_x) (_x)
++  #endif
++#else
++  #ifndef likely
++    #define likely(_x) __builtin_expect(!!(_x), 1)
++  #endif
++  #ifndef unlikely
++    #define unlikely(_x) __builtin_expect(!!(_x), 0)
++  #endif
++#endif
++
++#endif                                                   /* ! _HAVE_TYPES_H */
++
++// END GREENHOUSE PATCH TAINT
+diff --git a/util/log.c b/util/log.c
+index 2ee1500..dba3af2 100644
+--- a/util/log.c
++++ b/util/log.c
+@@ -33,6 +33,8 @@ QemuLogFile *qemu_logfile;
+ int qemu_loglevel;
+ static int log_append = 0;
+ static GArray *debug_regions;
++static int FD_OFFSET = 300; // GREENHOUSE PATCH
++extern bool hacklog    = false; // GREENHOUSE PATCH
+ 
+ /* Return the number of characters emitted.  */
+ int qemu_log(const char *fmt, ...)
+@@ -79,6 +81,8 @@ void qemu_set_log(int log_flags)
+ {
+     bool need_to_open_file = false;
+     QemuLogFile *logfile;
++    FILE *mapfile, *tmpfile; // GREENHOUSE PATCH
++    int tempfd, newfd; // GREENHOUSE PATCH
+ 
+     qemu_loglevel = log_flags;
+ #ifdef CONFIG_TRACE_LOG
+@@ -103,12 +107,38 @@ void qemu_set_log(int log_flags)
+     } else if (!qemu_logfile && need_to_open_file) {
+         logfile = g_new0(QemuLogFile, 1);
+         if (logfilename) {
+-            logfile->fd = fopen(logfilename, log_append ? "a" : "w");
+-            if (!logfile->fd) {
+-                g_free(logfile);
+-                perror(logfilename);
+-                _exit(1);
++            // GREENHOUSE PATCH
++            if (hacklog) {
++                mapfile = fopen(LOG_MAP, "a");
++                qemu_flockfile(mapfile);
++                tmpfile = fopen(logfilename, log_append ? "a" : "w");
++                tempfd = fileno(tmpfile);
++                newfd = tempfd + FD_OFFSET;
++                while (fcntl(newfd, F_GETFL) >= 0) {
++                    newfd += 1;
++                }
++                dup2(tempfd, newfd);
++                fclose(tmpfile);
++                logfile->fd = fdopen(newfd, log_append ? "a" : "w");
++
++                if (!logfile->fd) {
++                    g_free(logfile);
++                    perror(logfilename);
++                    _exit(1);
++                }
++                fprintf(mapfile, "%d:%d\n", getpid(), fileno(logfile->fd));
++                fclose(mapfile);
++                qemu_funlockfile(mapfile);
++            }
++            else {
++                logfile->fd = fopen(logfilename, log_append ? "a" : "w");
++                if (!logfile->fd) {
++                    g_free(logfile);
++                    perror(logfilename);
++                    _exit(1);
++                }
+             }
++            // END GREENHOUSE PATCH
+             /* In case we are a daemon redirect stderr to logfile */
+             if (is_daemonized()) {
+                 dup2(fileno(logfile->fd), STDERR_FILENO);
