@@ -19,6 +19,7 @@ QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_DOUBLE_READ_PATCH = os.path.join("..", "patches", "exit-double-read.patch")
 QEMU_LINUX_COREDUMP_PATCH = os.path.join("..", "patches", "linux-coredump.patch")
 QEMU_LINUX_GREENHOUSE_PATCH = os.path.join("..", "patches", "linux-greenhouse.patch")
+QEMU_LINUX_MMAP_PATCH = os.path.join("..", "patches", "linux-mmap.patch")
 QEMU_CGC_COREDUMP_PATCH = os.path.join("..", "patches", "cgc-coredump.patch")
 
 QEMU_PATH_CGC_TRACER = os.path.join(BIN_PATH, "shellphish-qemu-cgc-tracer")
@@ -68,9 +69,11 @@ def _clone_linux_qemu():
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
         #    raise LibError("Unable to apply tracer patch to qemu")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_GREENHOUSE_PATCH]) != 0:
-            raise LibError("Unable to apply coredump update patch to qemu-linux")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply greenhouse update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_COREDUMP_PATCH]) != 0:
+            raise LibError("Unable to apply coredump update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_MMAP_PATCH]) != 0:
+            raise LibError("Unable to apply mmap update patch to qemu-linux")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_CGC_BASE, 'apply', QEMU_CGC_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply coredump update patch to qemu-cgc-base")
 

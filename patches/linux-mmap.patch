@@ -1,0 +1,49 @@
+diff --git a/linux-user/main.c b/linux-user/main.c
+index aff7e87..e8a8062 100644
+--- a/linux-user/main.c
++++ b/linux-user/main.c
+@@ -474,6 +474,11 @@ static void handle_arg_plugin(const char *arg)
+ }
+ #endif
+ 
++static void handle_arg_mmap_start(const char *arg)
++{
++    qemu_set_mmap_start(arg);
++}
++
+ struct qemu_argument {
+     const char *argv;
+     const char *env;
+@@ -516,6 +521,8 @@ static const struct qemu_argument arg_table[] = {
+      "address",    "set guest_base address to 'address'"},
+     {"R",          "QEMU_RESERVED_VA", true,  handle_arg_reserved_va,
+      "size",       "reserve 'size' bytes for guest virtual address space"},
++    {"S",          "MMAP_START",       true,  handle_arg_mmap_start,
++     "mmap_start", "mmap base for the guest program"},
+     {"execve",     "QEMU_EXECVE",      true,   handle_arg_execve, // GREENHOUSE PATCH
+      "path",       "use interpreter at 'path' when a process calls execve()"},
+     {"pconly",     "QEMU_PCONLY",      false,   handle_arg_pconly, // GREENHOUSE PATCH
+diff --git a/linux-user/mmap.c b/linux-user/mmap.c
+index 00c05e6..4740aef 100644
+--- a/linux-user/mmap.c
++++ b/linux-user/mmap.c
+@@ -246,6 +246,19 @@ static int mmap_frag(abi_ulong real_start,
+ #endif
+ abi_ulong mmap_next_start = TASK_UNMAPPED_BASE;
+ 
++void qemu_set_mmap_start(const char *arg)
++{
++    int ret = sscanf(arg, "0x" TARGET_FMT_lx, &mmap_next_start);
++    if (ret != 1) {
++        fprintf(stderr, "Fail to parse mmap_start: '%s', expect 0xXXXXXXXX\n", arg);
++        exit(1);
++    }
++	if ((mmap_next_start & 0xfff) != 0) {
++        fprintf(stderr, "mmap_start: '%s' is not page-alignd\n", arg);
++        exit(1);
++	}
++}
++
+ unsigned long last_brk;
+ 
+ /* Subroutine of mmap_find_vma, used when we have pre-allocated a chunk
