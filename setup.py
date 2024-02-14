@@ -17,8 +17,10 @@ BIN_PATH = os.path.join("shellphish_qemu", "bin")
 QEMU_REPO_PATH_LINUX = "shellphish-qemu-linux"
 QEMU_LINUX_DOUBLE_READ_PATCH = os.path.join("..", "patches", "exit-double-read.patch")
 QEMU_LINUX_COREDUMP_PATCH = os.path.join("..", "patches", "linux-coredump.patch")
-QEMU_LINUX_GREENHOUSE_PATCH = os.path.join("..", "patches", "linux-greenhouse.patch")
+QEMU_LINUX_MIPS_TRANSLATE_PATCH = os.path.join("..", "patches", "linux-mips-translate.patch")
 QEMU_LINUX_MMAP_PATCH = os.path.join("..", "patches", "linux-mmap.patch")
+QEMU_LINUX_GREENHOUSE_PATCH = os.path.join("..", "patches", "linux-greenhouse.patch")
+QEMU_LINUX_READ_MARKER_PATCH = os.path.join("..", "patches", "linux-read-marker.patch")
 
 QEMU_PATH_LINUX_I386 = os.path.join(BIN_PATH, "shellphish-qemu-linux-i386")
 QEMU_PATH_LINUX_X86_64 = os.path.join(BIN_PATH, "shellphish-qemu-linux-x86_64")
@@ -52,12 +54,16 @@ def _clone_linux_qemu():
             raise LibError("Unable to retrieve qemu repository \"%s\"" % TRACER_QEMU_REPO_LINUX)
         #if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_DOUBLE_READ_PATCH]) != 0:
         #    raise LibError("Unable to apply tracer patch to qemu")
-        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_GREENHOUSE_PATCH]) != 0:
-            raise LibError("Unable to apply greenhouse update patch to qemu-linux")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_COREDUMP_PATCH]) != 0:
             raise LibError("Unable to apply coredump update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_MIPS_TRANSLATE_PATCH]) != 0:
+            raise LibError("Unable to apply mips-translate update patch to qemu-linux")
         if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_MMAP_PATCH]) != 0:
             raise LibError("Unable to apply mmap update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_GREENHOUSE_PATCH]) != 0:
+            raise LibError("Unable to apply greenhouse update patch to qemu-linux")
+        if subprocess.call(['git', '-C', QEMU_REPO_PATH_LINUX, 'apply', QEMU_LINUX_READ_MARKER_PATCH]) != 0:
+            raise LibError("Unable to apply read_marker update patch to qemu-linux")
 
 def _build_qemus():
     if not os.path.exists(BIN_PATH):

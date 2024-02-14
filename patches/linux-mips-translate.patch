@@ -1,0 +1,17 @@
+diff --git a/target/mips/translate.c b/target/mips/translate.c
+index c64a1bc..d3ef250 100644
+--- a/target/mips/translate.c
++++ b/target/mips/translate.c
+@@ -31542,9 +31542,9 @@ static void mips_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
+         (ctx->hflags & MIPS_HFLAG_BMASK) == 0) {
+         ctx->base.is_jmp = DISAS_TOO_MANY;
+     }
+-    if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
+-        ctx->base.is_jmp = DISAS_TOO_MANY;
+-    }
++    // if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
++    //     ctx->base.is_jmp = DISAS_TOO_MANY;
++    // }
+ }
+ 
+ static void mips_tr_tb_stop(DisasContextBase *dcbase, CPUState *cs)

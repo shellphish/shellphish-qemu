@@ -1,8 +1,8 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index 42902c9..5d87520 100644
+index 58aea60..2c62811 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
-@@ -150,6 +150,33 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
+@@ -144,6 +144,33 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  #endif /* CONFIG USER ONLY */
  
  /* Execute a TB, and fix up the CPU state afterwards if necessary */
@@ -36,28 +36,16 @@ index 42902c9..5d87520 100644
  static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
  {
      CPUArchState *env = cpu->env_ptr;
-@@ -158,45 +185,40 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+@@ -152,12 +179,41 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
      int tb_exit;
      uint8_t *tb_ptr = itb->tc.ptr;
  
--     // GREENHOUSE PATCH
--    if (hookhack && qemu_log_in_addr_range(itb->pc)) {
--        CPUClass *cc = CPU_GET_CLASS(cpu);
--        GByteArray *buf;\
--        int addr = 0;
--        int size = 0;
--        int* val, valptr;
--
--        // TAINT_func_mem_check(pc, 4);
--        cpu_synchronize_state(cpu);
--        // cc->dump_state(cpu, stderr, CPU_DUMP_FPU);
--        for (addr = 0; addr < cpu->gdb_num_g_regs; addr++) {
--            buf =  g_byte_array_new();
--            size = cc->gdb_read_register(cpu, buf, addr);
--            val = g_byte_array_free(buf, false);
--            valptr = *val;
--            if (TAINT_func_mem_check(valptr, 1)) {
--                qemu_log("[TAINT] FOUND PC: %x reg: %d, raw: %x\n", itb->pc, addr, *val);
+-    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+-                           "Trace %d: %p ["
+-                           TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
+-                           cpu->cpu_index, itb->tc.ptr,
+-                           itb->cs_base, itb->pc, itb->flags,
+-                           lookup_symbol(itb->pc));
 +    // decide whether to start tracing
 +    if(unlikely(trace_start_addr != 0 && trace_started == 0)) {
 +        if(unlikely(trace_start_addr >= itb->pc && trace_start_addr < itb->pc + itb->size))
@@ -68,33 +56,19 @@ index 42902c9..5d87520 100644
 +            if (!nth_start_trace_addr_occurrence)
 +            {
 +                trace_started = 1;
-             }
-         }
-     }
- 
--    // GREENHOUSE PATCH
--    if (hacklog) {
++            }
++        }
++    }
++
 +    if(trace_started) {
-         qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
--                            "Trace %d PID %d: %p ["
--                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
--                            cpu->cpu_index, getpid(), itb->tc.ptr,
--                            itb->cs_base, itb->pc, itb->flags,
--                            lookup_symbol(itb->pc));
++        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
 +                               "Trace %d: %p ["
 +                               TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
 +                               cpu->cpu_index, itb->tc.ptr,
 +                               itb->cs_base, itb->pc, itb->flags,
 +                               lookup_symbol(itb->pc));
-     }
--    else {
--        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
--                            "Trace %d: %p ["
--                            TARGET_FMT_lx "/" TARGET_FMT_lx "/%#x] %s\n",
--                            cpu->cpu_index, itb->tc.ptr,
--                            itb->cs_base, itb->pc, itb->flags,
--                            lookup_symbol(itb->pc));
- 
++    }
++
 +    if(unlikely(core_dumped == 0 && core_addr >= itb->pc && core_addr < itb->pc + itb->size)) {
 +        if (nth_core_addr_occurrence) {
 +            nth_core_addr_occurrence -= 1;
@@ -106,9 +80,10 @@ index 42902c9..5d87520 100644
 +			core_addr_dumping = 0;
 +            core_dumped = 1;
 +        }
-     }
++    }
  
  #if defined(DEBUG_DISAS)
+     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
 diff --git a/include/elf.h b/include/elf.h
 index 7a418ee..a539160 100644
 --- a/include/elf.h
@@ -402,10 +377,10 @@ index 0b02a92..7cb872f 100644
      const CPUState *cpu = env_cpu((CPUArchState *)env);
      const TaskState *ts = (const TaskState *)cpu->opaque;
 diff --git a/linux-user/main.c b/linux-user/main.c
-index 72bc9c8..aff7e87 100644
+index 24d1eb7..6dd373c 100644
 --- a/linux-user/main.c
 +++ b/linux-user/main.c
-@@ -298,6 +298,26 @@ static void handle_arg_stack_size(const char *arg)
+@@ -289,6 +289,21 @@ static void handle_arg_stack_size(const char *arg)
      }
  }
  
@@ -424,15 +399,10 @@ index 72bc9c8..aff7e87 100644
 +    qemu_set_trace_start_addr(arg);
 +}
 +
-+static void handle_arg_read_marker(const char *arg)
-+{
-+    qemu_set_read_marker(arg);
-+}
-+
  static void handle_arg_ld_prefix(const char *arg)
  {
      interp_prefix = strdup(arg);
-@@ -470,8 +490,16 @@ static const struct qemu_argument arg_table[] = {
+@@ -423,6 +438,12 @@ static const struct qemu_argument arg_table[] = {
       "",           ""},
      {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
       "port",       "wait gdb connection to 'port'"},
@@ -444,33 +414,27 @@ index 72bc9c8..aff7e87 100644
 +     "tracestart", "start tracing after tracestart address"},
      {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
       "path",       "set the elf interpreter prefix to 'path'"},
-+    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
-+     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
      {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
-      "size",       "set the stack size to 'size' bytes"},
-     {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
 diff --git a/linux-user/qemu.h b/linux-user/qemu.h
-index ca73467..b1221a4 100644
+index 534753c..25e7d02 100644
 --- a/linux-user/qemu.h
 +++ b/linux-user/qemu.h
-@@ -232,6 +232,8 @@ int info_is_fdpic(struct image_info *info);
+@@ -225,6 +225,7 @@ int info_is_fdpic(struct image_info *info);
  uint32_t get_elf_eflags(int fd);
  int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
  int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 +void qemu_set_core_dump_prefix(const char *prefix);
-+void qemu_set_read_marker(const char *args);
  
  abi_long memcpy_to_target(abi_ulong dest, const void *src,
                            unsigned long len);
 diff --git a/linux-user/signal.c b/linux-user/signal.c
-index 73de934..57fa7a6 100644
+index 73de934..b456bc1 100644
 --- a/linux-user/signal.c
 +++ b/linux-user/signal.c
-@@ -619,14 +619,18 @@ void force_sigsegv(int oldsig)
+@@ -619,14 +619,17 @@ void force_sigsegv(int oldsig)
  
  #endif
  
-+extern int last_rm_fd;
 +void QEMU_NORETURN dump_core_and_abort(int target_sig);
  /* abort execution with signal */
 -static void QEMU_NORETURN dump_core_and_abort(int target_sig)
@@ -486,7 +450,7 @@ index 73de934..57fa7a6 100644
  
      host_sig = target_to_host_signal(target_sig);
      trace_user_force_sig(env, target_sig, host_sig);
-@@ -645,10 +649,15 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+@@ -645,10 +648,13 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
          getrlimit(RLIMIT_CORE, &nodump);
          nodump.rlim_cur=0;
          setrlimit(RLIMIT_CORE, &nodump);
@@ -494,8 +458,6 @@ index 73de934..57fa7a6 100644
 -            target_sig, strsignal(host_sig), "core dumped" );
      }
  
-+    qemu_log("qemu: last read marker was read through fd: [%d]\n", last_rm_fd);
-+
 +    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 +    qemu_log("qemu: uncaught target signal %d (%s) - %s [%0*llx]\n",
 +             target_sig, strsignal(host_sig), "core dumped",
@@ -504,67 +466,3 @@ index 73de934..57fa7a6 100644
      /* The proper exit code for dying from an uncaught signal is
       * -<signal>.  The kernel doesn't allow exit() or _exit() to pass
       * a negative value.  To get the proper exit code we need to
-diff --git a/linux-user/syscall.c b/linux-user/syscall.c
-index 856c7e3..92791b7 100644
---- a/linux-user/syscall.c
-+++ b/linux-user/syscall.c
-@@ -3856,6 +3856,20 @@ fail:
-     return ret;
- }
- 
-+int last_rm_fd = -1;
-+char read_marker[0x200];
-+int rm_len = 0;
-+void qemu_set_read_marker(const char *arg)
-+{
-+	int arg_len = strlen(arg);
-+	if (arg_len/2 >= (sizeof(read_marker)-1)) {
-+		puts("read marker is too long");
-+		exit(-1);
-+	}
-+	for(int i=0; i<arg_len/2; i++) sscanf(&arg[2*i], "%2hhx", &read_marker[i]);
-+	rm_len = arg_len/2;
-+}
-+
- /* do_recvfrom() Must return target values and target errnos. */
- static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
-                             abi_ulong target_addr,
-@@ -3929,6 +3943,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
-                 goto fail;
-             }
-         }
-+        if(memmem(host_msg, len, read_marker, rm_len)) {
-+            last_rm_fd = fd;
-+        }
-         unlock_user(host_msg, msg, len);
-     } else {
- fail:
-@@ -8670,6 +8687,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
-             }
-             // END GREENHOUSE PATCH TAINT
- 
-+            if (ret >= 0) {
-+                if(memmem(p, ret, read_marker, rm_len)) {
-+                    last_rm_fd = arg1;
-+                }
-+            }
-             if (ret >= 0 &&
-                 fd_trans_host_to_target_data(arg1)) {
-                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
-diff --git a/target/mips/translate.c b/target/mips/translate.c
-index c64a1bc..449d2a1 100644
---- a/target/mips/translate.c
-+++ b/target/mips/translate.c
-@@ -31542,9 +31542,9 @@ static void mips_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
-         (ctx->hflags & MIPS_HFLAG_BMASK) == 0) {
-         ctx->base.is_jmp = DISAS_TOO_MANY;
-     }
--    if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
--        ctx->base.is_jmp = DISAS_TOO_MANY;
--    }
-+//    if (ctx->base.pc_next - ctx->page_start >= TARGET_PAGE_SIZE) {
-+//        ctx->base.is_jmp = DISAS_TOO_MANY;
-+//    }
- }
- 
- static void mips_tr_tb_stop(DisasContextBase *dcbase, CPUState *cs)

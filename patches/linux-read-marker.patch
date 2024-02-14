@@ -1,0 +1,107 @@
+diff --git a/linux-user/main.c b/linux-user/main.c
+index 24d1eb7..e461b79 100644
+--- a/linux-user/main.c
++++ b/linux-user/main.c
+@@ -304,6 +304,11 @@ static void handle_arg_pagesize(const char *arg)
+     }
+ }
+ 
++static void handle_arg_read_marker(const char *arg)
++{
++    qemu_set_read_marker(arg);
++}
++
+ static void handle_arg_seed(const char *arg)
+ {
+     seed_optarg = arg;
+@@ -437,6 +442,8 @@ static const struct qemu_argument arg_table[] = {
+      "argv0",      "forces target process argv[0] to be 'argv0'"},
+     {"r",          "QEMU_UNAME",       true,  handle_arg_uname,
+      "uname",      "set qemu uname release string to 'uname'"},
++    {"M",          "READ_MARKER",      true,  handle_arg_read_marker,
++     "marker",     "record the last fd that QEMU receives the marker, the marker is in hex format (ex. -M 41424344 )"},
+     {"B",          "QEMU_GUEST_BASE",  true,  handle_arg_guest_base,
+      "address",    "set guest_base address to 'address'"},
+     {"R",          "QEMU_RESERVED_VA", true,  handle_arg_reserved_va,
+diff --git a/linux-user/qemu.h b/linux-user/qemu.h
+index 534753c..475ce39 100644
+--- a/linux-user/qemu.h
++++ b/linux-user/qemu.h
+@@ -214,6 +214,7 @@ abi_ulong loader_build_argptr(int envc, int argc, abi_ulong sp,
+ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
+              struct target_pt_regs * regs, struct image_info *infop,
+              struct linux_binprm *);
++void qemu_set_read_marker(const char *args);
+ 
+ /* Returns true if the image uses the FDPIC ABI. If this is the case,
+  * we have to provide some information (loadmap, pt_dynamic_info) such
+diff --git a/linux-user/signal.c b/linux-user/signal.c
+index 73de934..ba0f629 100644
+--- a/linux-user/signal.c
++++ b/linux-user/signal.c
+@@ -605,6 +605,8 @@ void force_sig(int sig)
+  * up the signal frame. oldsig is the signal we were trying to handle
+  * at the point of failure.
+  */
++
++extern int last_rm_fd;
+ #if !defined(TARGET_RISCV)
+ void force_sigsegv(int oldsig)
+ {
+@@ -638,6 +640,9 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+         core_dumped =
+             ((*ts->bprm->core_dump)(target_sig, env) == 0);
+     }
++
++	qemu_log("qemu: last read marker was read through fd: [%d]\n", last_rm_fd);
++
+     if (core_dumped) {
+         /* we already dumped the core of target process, we don't want
+          * a coredump of qemu itself */
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 27adee9..4206636 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -3515,6 +3515,20 @@ static abi_long do_accept4(int fd, abi_ulong target_addr,
+     return ret;
+ }
+ 
++int last_rm_fd = -1;
++char read_marker[0x200];
++int rm_len = 0;
++void qemu_set_read_marker(const char *arg)
++{
++   int arg_len = strlen(arg);
++   if (arg_len/2 >= (sizeof(read_marker)-1)) {
++       puts("read marker is too long");
++       exit(-1);
++   }
++   for(int i=0; i<arg_len/2; i++) sscanf(&arg[2*i], "%2hhx", &read_marker[i]);
++   rm_len = arg_len/2;
++}
++
+ /* do_getpeername() Must return target values and target errnos. */
+ static abi_long do_getpeername(int fd, abi_ulong target_addr,
+                                abi_ulong target_addrlen_addr)
+@@ -3687,6 +3701,9 @@ static abi_long do_recvfrom(int fd, abi_ulong msg, size_t len, int flags,
+                 goto fail;
+             }
+         }
++        if(memmem(host_msg, len, read_marker, rm_len)) {
++            last_rm_fd = fd;
++        }
+         unlock_user(host_msg, msg, len);
+     } else {
+ fail:
+@@ -8227,6 +8244,11 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
+             if (!(p = lock_user(VERIFY_WRITE, arg2, arg3, 0)))
+                 return -TARGET_EFAULT;
+             ret = get_errno(safe_read(arg1, p, arg3));
++            if (ret >= 0) {
++                if(memmem(p, ret, read_marker, rm_len)) {
++                    last_rm_fd = arg1;
++                }
++            }
+             if (ret >= 0 &&
+                 fd_trans_host_to_target_data(arg1)) {
+                 ret = fd_trans_host_to_target_data(arg1)(p, ret);
