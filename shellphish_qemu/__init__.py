@@ -1,5 +1,5 @@
 import os
-import pkg_resources
+import importlib.resources
 
 __all__ = ('qemu_path', 'qemu_base', 'qemu_list')
 
@@ -16,7 +16,7 @@ def qemu_path(platform):
     raise ValueError('Unable to find qemu for platform "%s"' % platform)
 
 def qemu_base():
-    return pkg_resources.resource_filename('shellphish_qemu', 'bin')
+    return str(importlib.resources.files('shellphish_qemu') / 'bin')
 
 def qemu_list():
     qdir = os.listdir(qemu_base())
